@@ -1,0 +1,398 @@
+// CRM schema — Next.js + Prisma + PostgreSQL
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────── Enums ─────────────
+
+enum Role {
+  ADMIN
+  MANAGER
+  SALES
+}
+
+enum ContactKind {
+  LEAD
+  CUSTOMER
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  LOST
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum Source {
+  WEBSITE
+  INSTAGRAM
+  TELEGRAM
+  REFERRAL
+  PHONE
+  EVENT
+  OTHER
+}
+
+enum DealStage {
+  NEW
+  CONTACTED
+  PROPOSAL
+  NEGOTIATION
+  WON
+  LOST
+}
+
+enum TaskStatus {
+  TODO
+  DONE
+}
+
+enum TaskOrigin {
+  SELF       // created by the assignee
+  MANAGER    // assigned by a manager
+  AUTOMATION
+  AI
+}
+
+enum ActivityType {
+  NOTE
+  CALL
+  MEETING
+  MESSAGE
+  STATUS_CHANGE
+  STAGE_CHANGE
+  ASSIGNMENT
+  CONVERSION
+  TASK
+  SYSTEM
+}
+
+enum Channel {
+  SMS
+  EMAIL
+}
+
+enum MessageStatus {
+  QUEUED
+  SENT
+  FAILED
+}
+
+enum CampaignStatus {
+  DRAFT
+  QUEUED
+  SENDING
+  DONE
+  FAILED
+}
+
+enum AutomationTrigger {
+  LEAD_CREATED
+  LEAD_STATUS_CHANGED
+  DEAL_STAGE_CHANGED
+  CUSTOMER_CREATED
+  LEAD_INACTIVE
+  TASK_OVERDUE
+}
+
+enum RunStatus {
+  RUNNING
+  COMPLETED
+  CANCELLED
+  FAILED
+}
+
+enum SuggestionType {
+  CREATE_TASK
+  CHANGE_DEAL_STAGE
+  CHANGE_LEAD_STATUS
+}
+
+enum SuggestionStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+// ───────────── Models ─────────────
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  phone     String   @unique // login identity (OTP). Format: 09xxxxxxxxx
+  email     String?  @unique
+  role      Role     @default(SALES)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions          Session[]
+  ownedContacts     Contact[]    @relation("ContactOwner")
+  createdContacts   Contact[]    @relation("ContactCreator")
+  ownedDeals        Deal[]       @relation("DealOwner")
+  assignedTasks     Task[]       @relation("TaskAssignee")
+  createdTasks      Task[]       @relation("TaskCreator")
+  activities        Activity[]
+  sentMessages      Message[]
+  campaigns         Campaign[]
+  automations       Automation[]
+  aiSuggestions     AiSuggestion[]
+
+  @@index([role])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// Leads and customers share one table. `kind` decides which UI section shows it.
+// Converting lead → customer only flips `kind`, so history is kept.
+model Contact {
+  id          String      @id @default(cuid())
+  kind        ContactKind @default(LEAD)
+  fullName    String
+  phone       String?
+  email       String?
+  company     String?
+  city        String?
+  source      Source      @default(OTHER)
+  sourceNote  String?     // e.g. campaign name, referrer
+  leadStatus  LeadStatus  @default(NEW)
+  priority    Priority    @default(MEDIUM)
+  score       Int         @default(0)
+  tags        String[]
+  notes       String?
+  isActive    Boolean     @default(true)
+  optOutSms   Boolean     @default(false)
+  optOutEmail Boolean     @default(false)
+  ownerId     String?     // assigned sales rep
+  createdById String
+  convertedAt DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  owner      User?  @relation("ContactOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  createdBy  User   @relation("ContactCreator", fields: [createdById], references: [id])
+  deals      Deal[]
+  tasks      Task[]
+  activities Activity[]
+  messages   Message[]
+  runs       AutomationRun[]
+  suggestions AiSuggestion[]
+  aiSummary  AiSummary?
+
+  @@index([kind, ownerId])
+  @@index([source])
+  @@index([leadStatus])
+  @@index([createdAt])
+}
+
+model Deal {
+  id              String    @id @default(cuid())
+  title           String
+  amount          Decimal   @default(0) @db.Decimal(15, 0) // Toman
+  stage           DealStage @default(NEW)
+  position        Float     @default(0) // order inside a kanban column
+  contactId       String
+  ownerId         String
+  expectedCloseAt DateTime?
+  closedAt        DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  contact     Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  owner       User    @relation("DealOwner", fields: [ownerId], references: [id])
+  tasks       Task[]
+  activities  Activity[]
+  runs        AutomationRun[]
+  suggestions AiSuggestion[]
+
+  @@index([stage, ownerId])
+  @@index([contactId])
+  @@index([closedAt])
+}
+
+model Task {
+  id          String     @id @default(cuid())
+  title       String
+  description String?
+  dueAt       DateTime?
+  status      TaskStatus @default(TODO)
+  priority    Priority   @default(MEDIUM)
+  origin      TaskOrigin @default(SELF)
+  assigneeId  String
+  createdById String?    // null when created by automation/AI
+  contactId   String?
+  dealId      String?
+  completedAt DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  assignee  User     @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  createdBy User?    @relation("TaskCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  deal      Deal?    @relation(fields: [dealId], references: [id], onDelete: SetNull)
+
+  @@index([assigneeId, status, dueAt])
+  @@index([contactId])
+}
+
+// Timeline of everything that happened to a contact/deal. Also the input for AI.
+model Activity {
+  id        String       @id @default(cuid())
+  type      ActivityType
+  body      String?
+  meta      Json?        // e.g. { from: "NEW", to: "PROPOSAL" }
+  contactId String
+  dealId    String?
+  userId    String?      // null = system/automation
+  createdAt DateTime     @default(now())
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  deal    Deal?   @relation(fields: [dealId], references: [id], onDelete: SetNull)
+  user    User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([contactId, createdAt])
+  @@index([userId, createdAt])
+}
+
+model Message {
+  id                String        @id @default(cuid())
+  channel           Channel
+  toAddress         String        // phone or email
+  subject           String?
+  body              String
+  status            MessageStatus @default(QUEUED)
+  providerMessageId String?
+  error             String?
+  contactId         String?
+  campaignId        String?
+  automationRunId   String?
+  sentById          String?       // null = automation/campaign worker
+  createdAt         DateTime      @default(now())
+  sentAt            DateTime?
+
+  contact       Contact?        @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  campaign      Campaign?       @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  automationRun AutomationRun?  @relation(fields: [automationRunId], references: [id], onDelete: SetNull)
+  sentBy        User?           @relation(fields: [sentById], references: [id], onDelete: SetNull)
+
+  @@index([campaignId, status])
+  @@index([contactId, createdAt])
+}
+
+model Campaign {
+  id          String         @id @default(cuid())
+  name        String
+  channel     Channel
+  subject     String?        // email only
+  body        String         // supports {{fullName}} placeholders
+  filter      Json           // audience filter, e.g. { kind, source, status, ownerId, tags }
+  status      CampaignStatus @default(DRAFT)
+  totalCount  Int            @default(0)
+  sentCount   Int            @default(0)
+  failedCount Int            @default(0)
+  createdById String
+  scheduledAt DateTime?
+  startedAt   DateTime?
+  finishedAt  DateTime?
+  createdAt   DateTime       @default(now())
+
+  createdBy User      @relation(fields: [createdById], references: [id])
+  messages  Message[]
+
+  @@index([status])
+}
+
+// Automation definition. Steps are stored as JSON
+model Automation {
+  id            String            @id @default(cuid())
+  name          String
+  description   String?
+  isActive      Boolean           @default(false)
+  isPreset      Boolean           @default(false) // ready-made, shipped via seed
+  trigger       AutomationTrigger
+  triggerConfig Json?             // e.g. { "toStage": "WON" } or { "days": 7 }
+  conditions    Json?
+  steps         Json
+  stopOnReply   Boolean           @default(false)
+  createdById   String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  createdBy User?           @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  runs      AutomationRun[]
+
+  @@index([trigger, isActive])
+}
+
+model AutomationRun {
+  id           String    @id @default(cuid())
+  automationId String
+  contactId    String
+  dealId       String?
+  status       RunStatus @default(RUNNING)
+  currentStep  Int       @default(0)
+  log          Json?     // per-step results
+  startedAt    DateTime  @default(now())
+  finishedAt   DateTime?
+
+  automation Automation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+  contact    Contact    @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  deal       Deal?      @relation(fields: [dealId], references: [id], onDelete: SetNull)
+  messages   Message[]
+
+  @@index([automationId, status])
+  @@index([contactId])
+}
+
+// AI proposes, a human approves. Nothing is applied while PENDING.
+model AiSuggestion {
+  id         String           @id @default(cuid())
+  type       SuggestionType
+  payload    Json             // validated with Zod before saving and before applying
+  sourceText String?          // the smart-note text that produced it
+  status     SuggestionStatus @default(PENDING)
+  contactId  String
+  dealId     String?
+  createdById String
+  decidedAt  DateTime?
+  createdAt  DateTime         @default(now())
+
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  deal      Deal?   @relation(fields: [dealId], references: [id], onDelete: SetNull)
+  createdBy User    @relation(fields: [createdById], references: [id])
+
+  @@index([contactId, status])
+}
+
+// Cached customer summary
+model AiSummary {
+  id        String   @id @default(cuid())
+  contactId String   @unique
+  summary   String
+  risk      String?  // low | medium | high
+  nextStep  String?
+  updatedAt DateTime @updatedAt
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+}
