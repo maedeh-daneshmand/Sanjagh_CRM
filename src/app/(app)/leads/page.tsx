@@ -2,20 +2,14 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { formatNumber } from "@/lib/utils";
 import {
   UserCheck,
   Search,
   Plus,
   ArrowRightLeft,
   Flame,
-  Phone,
-  Mail,
-  Building,
-  Star,
   CheckCircle2,
   Trash2,
-  Eye,
   X,
 } from "lucide-react";
 
@@ -340,7 +334,7 @@ export default function LeadsPage() {
                   <label className="block font-semibold mb-1">اولویت</label>
                   <select
                     value={newLead.priority}
-                    onChange={(e) => setNewLead({ ...newLead, priority: e.target.value as any })}
+                    onChange={(e) => setNewLead({ ...newLead, priority: e.target.value as "HIGH" | "MEDIUM" | "LOW" })}
                     className="w-full p-2.5 bg-muted/40 border border-border rounded-xl focus:outline-none focus:border-primary"
                   >
                     <option value="HIGH">بالا (فوری)</option>

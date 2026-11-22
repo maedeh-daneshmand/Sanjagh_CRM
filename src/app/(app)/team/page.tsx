@@ -1,19 +1,13 @@
 "use client";
 
 import React, { useState } from "react";
-import { formatNumber, formatToman } from "@/lib/utils";
+import { formatNumber } from "@/lib/utils";
 import {
   Users,
-  Shield,
   Briefcase,
-  TrendingUp,
   DollarSign,
-  AlertCircle,
   CheckCircle2,
-  PhoneCall,
   ArrowRightLeft,
-  Search,
-  Plus,
   X,
 } from "lucide-react";
 
@@ -39,6 +33,7 @@ const initialReps: SalesRep[] = [
 ];
 
 export default function TeamPage() {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- retained for future state updates
   const [reps, setReps] = useState<SalesRep[]>(initialReps);
   const [reassignModalOpen, setReassignModalOpen] = useState(false);
   const [selectedRep, setSelectedRep] = useState<SalesRep | null>(null);

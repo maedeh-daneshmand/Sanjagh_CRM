@@ -13,10 +13,8 @@ import {
   Sliders,
   LogOut,
   User,
-  Shield,
   CheckCircle2,
   PhoneCall,
-  Calendar,
 } from "lucide-react";
 
 export function AppHeader({ onOpenNewDeal }: { onOpenNewDeal?: () => void }) {

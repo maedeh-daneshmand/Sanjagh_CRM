@@ -3,15 +3,14 @@
 import React, { useState } from "react";
 import { AppSidebar } from "@/components/layout/sidebar";
 import { AppHeader } from "@/components/layout/header";
-import { useThemeCustomizer } from "@/components/theme/theme-context";
 
 export default function AppShellLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const { layout } = useThemeCustomizer();
-  const [newDealOpen, setNewDealOpen] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- retained for quick deal dialog state
+  const [_newDealOpen, setNewDealOpen] = useState(false);
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background">

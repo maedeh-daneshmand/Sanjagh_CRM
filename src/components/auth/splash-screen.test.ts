@@ -41,7 +41,7 @@ describe("SplashScreen session storage logic", () => {
     expect(() => {
       try {
         sessionStorage.getItem(SPLASH_STORAGE_KEY);
-      } catch (err) {
+      } catch {
         // Safe catch
       }
     }).not.toThrow();

@@ -2,32 +2,25 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { formatNumber, formatToman } from "@/lib/utils";
+import { formatNumber } from "@/lib/utils";
 import {
-  User,
   Building,
   Phone,
   Mail,
   MapPin,
-  Calendar,
   CheckCircle2,
-  Clock,
   ArrowRight,
   Sparkles,
   Bot,
   Send,
-  Plus,
   MessageSquare,
   PhoneCall,
   Video,
   FileText,
   Flame,
   ArrowRightLeft,
-  ThumbsUp,
-  ThumbsDown,
   Check,
   X,
-  Tag,
 } from "lucide-react";
 
 export default function ContactDetailPage({ params }: { params: { id: string } }) {
@@ -59,12 +52,14 @@ export default function ContactDetailPage({ params }: { params: { id: string } }
   ]);
 
   // Deals
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- retained for future state updates
   const [deals, setDeals] = useState([
     { id: "d1", title: "خرید لایسنس ۵۰ کاربره سازمانی", amount: 48000000, stage: "مذاکره نهایی", date: "22 آبان 1403" },
     { id: "d2", title: "قرارداد سالانه پشتیبانی ۲۴/۷", amount: 24000000, stage: "پیش‌فاکتور و دمو", date: "30 آبان 1403" },
   ]);
 
   // Tasks
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- retained for future state updates
   const [tasks, setTasks] = useState([
     { id: "t1", title: "هماهنگی جلسه آنلاین با مدیر فنی", due: "فردا ساعت ۱۱:۰۰", status: "TODO" },
     { id: "t2", title: "ارسال نسخه نهایی قرارداد و پیش‌فاکتور", due: "امروز تا پایان وقت اداری", status: "TODO" },
@@ -79,7 +74,9 @@ export default function ContactDetailPage({ params }: { params: { id: string } }
 
   // AI Feature 2: Smart Note Parser suggestions
   const [smartNoteText, setSmartNoteText] = useState("");
-  const [aiSuggestions, setAiSuggestions] = useState<any[]>([]);
+  const [aiSuggestions, setAiSuggestions] = useState<
+    { id: string; type: string; title: string; desc: string; status: "PENDING" | "ACCEPTED" | "REJECTED" }[]
+  >([]);
   const [isAnalyzingSmartNote, setIsAnalyzingSmartNote] = useState(false);
 
   const handleAddNote = (e: React.FormEvent) => {

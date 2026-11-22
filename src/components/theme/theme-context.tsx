@@ -48,6 +48,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const savedDirection = localStorage.getItem("sanjagh_direction") as Direction;
     const savedRole = localStorage.getItem("sanjagh_acting_role") as ActingRole;
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate state from localStorage on client mount to avoid theme flash and SSR mismatch
     if (savedTheme) setTheme(savedTheme);
     if (savedColor) setColor(savedColor);
     if (savedDensity) setDensity(savedDensity);

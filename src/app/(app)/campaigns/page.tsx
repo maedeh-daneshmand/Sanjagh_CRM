@@ -1,19 +1,13 @@
 "use client";
 
 import React, { useState } from "react";
-import { formatNumber } from "@/lib/utils";
 import {
   Megaphone,
   Plus,
   Send,
   MessageSquare,
   Mail,
-  Users,
-  CheckCircle2,
-  Clock,
-  AlertCircle,
   Sparkles,
-  Filter,
   X,
 } from "lucide-react";
 
@@ -196,7 +190,7 @@ export default function CampaignsPage() {
                   <label className="block font-semibold mb-1">کانال ارتباطی</label>
                   <select
                     value={newCampaign.channel}
-                    onChange={(e) => setNewCampaign({ ...newCampaign, channel: e.target.value as any })}
+                    onChange={(e) => setNewCampaign({ ...newCampaign, channel: e.target.value as "SMS" | "EMAIL" })}
                     className="w-full p-2.5 bg-muted/40 border border-border rounded-xl focus:outline-none focus:border-primary"
                   >
                     <option value="SMS">پیامک (SMS عبر کاوه‌نگار)</option>

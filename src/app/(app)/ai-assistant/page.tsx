@@ -7,11 +7,9 @@ import {
   Send,
   Copy,
   Check,
-  RefreshCw,
   MessageSquare,
   Mail,
   Zap,
-  TrendingUp,
   Flame,
 } from "lucide-react";
 
@@ -125,15 +123,17 @@ export default function AiAssistantPage() {
             <div>
               <label className="block font-semibold mb-1.5">لحن پیام (Tone)</label>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {[
-                  { id: "friendly", name: "دوستانه و صمیمی" },
-                  { id: "formal", name: "رسمی و اداری" },
-                  { id: "short", name: "کوتاه و تلگرافی" },
-                  { id: "persuasive", name: "ترغیبی و تشویقی" },
-                ].map((t) => (
+                {(
+                  [
+                    { id: "friendly", name: "دوستانه و صمیمی" },
+                    { id: "formal", name: "رسمی و اداری" },
+                    { id: "short", name: "کوتاه و تلگرافی" },
+                    { id: "persuasive", name: "ترغیبی و تشویقی" },
+                  ] as const
+                ).map((t) => (
                   <button
                     key={t.id}
-                    onClick={() => setTone(t.id as any)}
+                    onClick={() => setTone(t.id)}
                     className={`py-2 px-3 rounded-xl border text-xs font-semibold transition-all ${
                       tone === t.id
                         ? "border-primary bg-primary/10 text-primary"

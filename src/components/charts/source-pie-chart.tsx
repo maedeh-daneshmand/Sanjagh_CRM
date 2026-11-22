@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useSyncExternalStore } from "react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 
 const sourceData = [
@@ -10,12 +10,10 @@ const sourceData = [
   { name: "شبکه‌های اجتماعی", value: 15, color: "#a855f7" },
 ];
 
-export default function SourcePieChart() {
-  const [mounted, setMounted] = useState(false);
+const emptySubscribe = () => () => {};
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+export default function SourcePieChart() {
+  const mounted = useSyncExternalStore(emptySubscribe, () => true, () => false);
 
   if (!mounted) {
     return (
@@ -43,7 +41,7 @@ export default function SourcePieChart() {
             ))}
           </Pie>
           <Tooltip
-            formatter={(val: any) => [`${val}%`, "سهم"]}
+            formatter={(val: unknown) => [`${typeof val === "number" || typeof val === "string" ? val : ""}%`, "سهم"]}
             contentStyle={{
               backgroundColor: "hsl(var(--card))",
               borderColor: "hsl(var(--border))",

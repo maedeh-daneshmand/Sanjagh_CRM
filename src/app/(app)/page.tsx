@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useThemeCustomizer } from "@/components/theme/theme-context";
-import { formatNumber, formatToman } from "@/lib/utils";
+import { formatNumber } from "@/lib/utils";
 import {
   TrendingUp,
   TrendingDown,
@@ -16,12 +16,8 @@ import {
   Clock,
   ArrowUpRight,
   UserCheck,
-  Calendar,
   PhoneCall,
   Mail,
-  AlertCircle,
-  Plus,
-  Briefcase,
   Layers,
 } from "lucide-react";
 
@@ -52,12 +48,6 @@ const sourceLabels = [
 
 export default function DashboardPage() {
   const { actingRole } = useThemeCustomizer();
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
   const isSalesOnly = actingRole === "SALES";
 
   return (

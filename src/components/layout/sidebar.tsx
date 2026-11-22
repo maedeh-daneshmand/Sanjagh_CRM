@@ -17,15 +17,13 @@ import {
   Sparkles,
   Settings,
   Shield,
-  ChevronDown,
   Pin,
-  HelpCircle,
-  FolderGit2,
 } from "lucide-react";
 
 export function AppSidebar() {
   const pathname = usePathname();
   const { layout, actingRole } = useThemeCustomizer();
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- retained for toggle collapsed UI
   const [collapsed, setCollapsed] = useState(false);
 
   const isMini = layout === "mini" || collapsed;

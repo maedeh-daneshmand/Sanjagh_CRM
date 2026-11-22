@@ -1,18 +1,15 @@
 "use client";
 
 import React, { useState } from "react";
-import { formatNumber } from "@/lib/utils";
 import {
   CheckSquare,
   Plus,
   Clock,
   AlertCircle,
   CheckCircle2,
-  Calendar,
   User,
   Trash2,
   X,
-  Filter,
 } from "lucide-react";
 
 interface TaskItem {
@@ -292,7 +289,7 @@ export default function TasksPage() {
                   <label className="block font-semibold mb-1">اولویت اقدام</label>
                   <select
                     value={newTask.priority}
-                    onChange={(e) => setNewTask({ ...newTask, priority: e.target.value as any })}
+                    onChange={(e) => setNewTask({ ...newTask, priority: e.target.value as "HIGH" | "MEDIUM" | "LOW" })}
                     className="w-full p-2.5 bg-muted/40 border border-border rounded-xl focus:outline-none focus:border-primary"
                   >
                     <option value="HIGH">فوری و مهم (بالا)</option>

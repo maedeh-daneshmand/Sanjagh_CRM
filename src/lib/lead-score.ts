@@ -1,4 +1,4 @@
-import { Source, Priority, ActivityType } from "@prisma/client";
+import { Source, Priority } from "@prisma/client";
 
 interface LeadScoreInput {
   source: Source;

@@ -3,17 +3,13 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import {
-  Workflow,
-  Plus,
   Play,
   Save,
   ArrowRight,
   Zap,
   Clock,
   MessageSquare,
-  Mail,
   CheckSquare,
-  UserCheck,
   CheckCircle2,
 } from "lucide-react";
 

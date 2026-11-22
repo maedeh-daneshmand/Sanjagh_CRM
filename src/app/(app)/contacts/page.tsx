@@ -2,23 +2,13 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { formatNumber, formatPhone } from "@/lib/utils";
+import { formatNumber } from "@/lib/utils";
 import {
   Users,
   Search,
   Plus,
-  Filter,
-  Download,
-  Phone,
-  Mail,
-  Building,
-  MapPin,
-  Tag,
   Eye,
   Trash2,
-  Edit,
-  CheckCircle,
-  MoreVertical,
   X,
 } from "lucide-react";
 

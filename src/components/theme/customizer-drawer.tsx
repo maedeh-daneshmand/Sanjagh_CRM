@@ -3,12 +3,9 @@
 import React from "react";
 import {
   useThemeCustomizer,
-  ThemeMode,
   ColorPalette,
   Density,
   LayoutMode,
-  Direction,
-  ActingRole,
 } from "./theme-context";
 import {
   X,
@@ -21,9 +18,6 @@ import {
   Shield,
   UserCheck,
   Briefcase,
-  Layout,
-  Maximize2,
-  Minimize2,
 } from "lucide-react";
 
 export function CustomizerDrawer() {

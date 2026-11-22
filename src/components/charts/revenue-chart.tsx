@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useSyncExternalStore } from "react";
 import { formatNumber } from "@/lib/utils";
 import {
   AreaChart,
@@ -23,12 +23,10 @@ const monthlyData = [
   { month: "آبان", revenue: 48295, deals: 34 },
 ];
 
-export default function RevenueChart() {
-  const [mounted, setMounted] = useState(false);
+const emptySubscribe = () => () => {};
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+export default function RevenueChart() {
+  const mounted = useSyncExternalStore(emptySubscribe, () => true, () => false);
 
   if (!mounted) {
     return (
@@ -56,7 +54,10 @@ export default function RevenueChart() {
             tickFormatter={(val) => `${val / 1000}k`}
           />
           <Tooltip
-            formatter={(value: any) => [`${formatNumber(value)} هزار تومان`, "درآمد"]}
+            formatter={(value: unknown) => [
+              `${typeof value === "number" || typeof value === "string" ? formatNumber(value) : ""} هزار تومان`,
+              "درآمد",
+            ]}
             contentStyle={{
               backgroundColor: "hsl(var(--card))",
               borderColor: "hsl(var(--border))",

@@ -1,23 +1,14 @@
 "use client";
 
 import React, { useState } from "react";
-import { formatNumber } from "@/lib/utils";
 import { useThemeCustomizer } from "@/components/theme/theme-context";
 import {
   Settings,
-  User,
-  CreditCard,
-  Shield,
-  Palette,
   Check,
-  Zap,
-  Building,
-  Mail,
-  Phone,
-  Sliders,
 } from "lucide-react";
 
 export default function SettingsPage() {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- retained for future state updates
   const { actingRole, setIsCustomizerOpen } = useThemeCustomizer();
   const [activeTab, setActiveTab] = useState<"profile" | "billing" | "security">("profile");
 

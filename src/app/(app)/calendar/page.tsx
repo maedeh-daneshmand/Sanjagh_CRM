@@ -7,9 +7,6 @@ import {
   ChevronLeft,
   Plus,
   Clock,
-  CheckCircle2,
-  AlertCircle,
-  X,
 } from "lucide-react";
 
 export default function JalaliCalendarPage() {

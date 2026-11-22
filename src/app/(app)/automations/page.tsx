@@ -5,16 +5,9 @@ import Link from "next/link";
 import {
   Workflow,
   Plus,
-  Play,
-  CheckCircle2,
-  Clock,
   ArrowRight,
-  Sparkles,
   ToggleLeft,
   ToggleRight,
-  Shield,
-  Layers,
-  FileCode,
   Zap,
 } from "lucide-react";
 

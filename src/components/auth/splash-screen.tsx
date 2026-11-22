@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 
 export const SPLASH_STORAGE_KEY = "sanjagh_splash_seen";
 
@@ -18,15 +18,18 @@ export function SplashScreen({ forceShow = false, onDismiss }: SplashScreenProps
     try {
       const alreadySeen = sessionStorage.getItem(SPLASH_STORAGE_KEY);
       if (!alreadySeen || forceShow) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- check sessionStorage on client mount to avoid hydration mismatch
         setVisible(true);
       }
     } catch {
       // If sessionStorage fails (e.g. private mode blocked), don't block
-      if (forceShow) setVisible(true);
+      if (forceShow) {
+        setVisible(true);
+      }
     }
   }, [forceShow]);
 
-  const dismiss = () => {
+  const dismiss = useCallback(() => {
     if (slidingOut || !visible) return;
     setSlidingOut(true);
 
@@ -42,7 +45,7 @@ export function SplashScreen({ forceShow = false, onDismiss }: SplashScreenProps
       setSlidingOut(false);
       onDismiss?.();
     }, 600);
-  };
+  }, [slidingOut, visible, onDismiss]);
 
   useEffect(() => {
     if (!visible || slidingOut) return;
@@ -62,7 +65,7 @@ export function SplashScreen({ forceShow = false, onDismiss }: SplashScreenProps
       clearTimeout(autoDismissTimer);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [visible, slidingOut]);
+  }, [visible, slidingOut, dismiss]);
 
   if (!visible) return null;
 

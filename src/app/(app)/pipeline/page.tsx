@@ -1,21 +1,17 @@
 "use client";
 
 import React, { useState } from "react";
-import Link from "next/link";
-import { formatNumber, formatToman } from "@/lib/utils";
+import { formatNumber } from "@/lib/utils";
 import {
   Kanban,
   Plus,
   ArrowRight,
   ArrowLeft,
   CheckCircle2,
-  XCircle,
   Building,
   User,
-  Clock,
   DollarSign,
   TrendingUp,
-  Filter,
   X,
 } from "lucide-react";
 
@@ -74,7 +70,7 @@ export default function PipelinePage() {
       deals.map((deal) => {
         if (deal.id !== dealId) return deal;
         const currentIdx = stageOrder.indexOf(deal.stage);
-        let nextIdx = direction === "next" ? currentIdx + 1 : currentIdx - 1;
+        const nextIdx = direction === "next" ? currentIdx + 1 : currentIdx - 1;
         if (nextIdx < 0 || nextIdx >= stageOrder.length) return deal;
         return { ...deal, stage: stageOrder[nextIdx] };
       })
@@ -339,7 +335,7 @@ export default function PipelinePage() {
                   <label className="block font-semibold mb-1">مرحله شروع</label>
                   <select
                     value={newDeal.stage}
-                    onChange={(e) => setNewDeal({ ...newDeal, stage: e.target.value as any })}
+                    onChange={(e) => setNewDeal({ ...newDeal, stage: e.target.value as StageKey })}
                     className="w-full p-2.5 bg-muted/40 border border-border rounded-xl focus:outline-none focus:border-primary"
                   >
                     {STAGES.map((s) => (

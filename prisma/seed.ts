@@ -10,6 +10,7 @@ import {
   TaskOrigin,
   ActivityType,
   AutomationTrigger,
+  Prisma,
 } from "@prisma/client";
 
 const prisma = new PrismaClient();
@@ -34,7 +35,7 @@ async function main() {
   // 2. Users: 1 ADMIN, 1 MANAGER, 3 SALES
   const adminPhone = process.env.SEED_ADMIN_PHONE || "09123456789";
 
-  const admin = await prisma.user.create({
+  await prisma.user.create({
     data: {
       name: "مدیر ارشد سنجاق",
       phone: adminPhone,
@@ -220,8 +221,8 @@ async function main() {
     const assignee = allSales[i % allSales.length];
 
     // Some overdue (-2 days), some today, some future (+3 days), some DONE
-    let dueAt = new Date(now + ((i % 5) - 2) * dayMs);
-    let status = i % 4 === 0 ? TaskStatus.DONE : TaskStatus.TODO;
+    const dueAt = new Date(now + ((i % 5) - 2) * dayMs);
+    const status = i % 4 === 0 ? TaskStatus.DONE : TaskStatus.TODO;
 
     await prisma.task.create({
       data: {
@@ -261,7 +262,7 @@ async function main() {
         data: {
           type: act.type,
           body: act.body,
-          meta: act.meta ? (act.meta as any) : undefined,
+          meta: act.meta ? (act.meta as Prisma.InputJsonValue) : undefined,
           contactId: contact.id,
           userId: contact.ownerId || sales1.id,
           createdAt: new Date(now - (j * 2 + 1) * dayMs),
