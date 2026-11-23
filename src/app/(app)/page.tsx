@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useThemeCustomizer } from "@/components/theme/theme-context";
+import { useUser } from "@/components/auth/user-context";
 import { formatNumber } from "@/lib/utils";
 import {
   TrendingUp,
@@ -47,8 +47,8 @@ const sourceLabels = [
 ];
 
 export default function DashboardPage() {
-  const { actingRole } = useThemeCustomizer();
-  const isSalesOnly = actingRole === "SALES";
+  const { user } = useUser();
+  const isSalesOnly = user.role === "SALES";
 
   return (
     <div className="space-y-8 pb-10">

@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { useThemeCustomizer } from "@/components/theme/theme-context";
+import { useUser } from "@/components/auth/user-context";
 import {
   Settings,
   Check,
@@ -9,13 +10,14 @@ import {
 
 export default function SettingsPage() {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- retained for future state updates
-  const { actingRole, setIsCustomizerOpen } = useThemeCustomizer();
+  const { setIsCustomizerOpen } = useThemeCustomizer();
+  const { user } = useUser();
   const [activeTab, setActiveTab] = useState<"profile" | "billing" | "security">("profile");
 
   const [profile, setProfile] = useState({
-    name: "مدیر ارشد سنجاق",
-    phone: "09123456789",
-    email: "admin@sanjagh.ir",
+    name: user.name || "مدیر ارشد سنجاق",
+    phone: user.phone || "09123456789",
+    email: user.email || "admin@sanjagh.ir",
     company: "سامانه مدیریت ارتباط با مشتری سنجاق",
     bio: "راهبر ارشد سیستم فروش و توسعه نرم‌افزار",
   });
@@ -82,7 +84,7 @@ export default function SettingsPage() {
               <h3 className="text-xs font-bold text-foreground">{profile.name}</h3>
               <p className="text-[11px] text-muted-foreground font-mono">{profile.phone}</p>
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-bold mt-1 inline-block">
-                نقش: {actingRole}
+                نقش: {user.role === "ADMIN" ? "مدیر ارشد" : user.role === "MANAGER" ? "مدیر فروش" : "کارشناس فروش"}
               </span>
             </div>
           </div>

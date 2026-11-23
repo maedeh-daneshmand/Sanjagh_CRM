@@ -7,7 +7,6 @@ export type ColorPalette = "emerald" | "blue" | "violet" | "rose" | "orange" | "
 export type Density = "compact" | "comfortable" | "spacious";
 export type LayoutMode = "sidebar" | "mini" | "compact" | "floating" | "top-nav" | "hybrid";
 export type Direction = "rtl" | "ltr";
-export type ActingRole = "ADMIN" | "MANAGER" | "SALES";
 
 interface ThemeContextType {
   theme: ThemeMode;
@@ -20,8 +19,6 @@ interface ThemeContextType {
   setLayout: (layout: LayoutMode) => void;
   direction: Direction;
   setDirection: (direction: Direction) => void;
-  actingRole: ActingRole;
-  setActingRole: (role: ActingRole) => void;
   isCustomizerOpen: boolean;
   setIsCustomizerOpen: (open: boolean) => void;
   resetDefaults: () => void;
@@ -35,7 +32,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [density, setDensity] = useState<Density>("comfortable");
   const [layout, setLayout] = useState<LayoutMode>("sidebar");
   const [direction, setDirection] = useState<Direction>("rtl");
-  const [actingRole, setActingRole] = useState<ActingRole>("ADMIN");
   const [isCustomizerOpen, setIsCustomizerOpen] = useState<boolean>(false);
   const [mounted, setMounted] = useState<boolean>(false);
 
@@ -46,7 +42,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const savedDensity = localStorage.getItem("sanjagh_density") as Density;
     const savedLayout = localStorage.getItem("sanjagh_layout") as LayoutMode;
     const savedDirection = localStorage.getItem("sanjagh_direction") as Direction;
-    const savedRole = localStorage.getItem("sanjagh_acting_role") as ActingRole;
 
     // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate state from localStorage on client mount to avoid theme flash and SSR mismatch
     if (savedTheme) setTheme(savedTheme);
@@ -54,7 +49,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     if (savedDensity) setDensity(savedDensity);
     if (savedLayout) setLayout(savedLayout);
     if (savedDirection) setDirection(savedDirection);
-    if (savedRole) setActingRole(savedRole);
     setMounted(true);
   }, []);
 
@@ -65,7 +59,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem("sanjagh_density", density);
     localStorage.setItem("sanjagh_layout", layout);
     localStorage.setItem("sanjagh_direction", direction);
-    localStorage.setItem("sanjagh_acting_role", actingRole);
 
     // Apply classes and attributes to document element
     const root = document.documentElement;
@@ -82,7 +75,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     root.setAttribute("data-density", density);
     root.setAttribute("data-layout", layout);
     root.setAttribute("dir", direction);
-  }, [theme, color, density, layout, direction, actingRole, mounted]);
+  }, [theme, color, density, layout, direction, mounted]);
 
   const resetDefaults = () => {
     setTheme("light");
@@ -90,7 +83,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setDensity("comfortable");
     setLayout("sidebar");
     setDirection("rtl");
-    setActingRole("ADMIN");
   };
 
   return (
@@ -106,8 +98,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         setLayout,
         direction,
         setDirection,
-        actingRole,
-        setActingRole,
         isCustomizerOpen,
         setIsCustomizerOpen,
         resetDefaults,

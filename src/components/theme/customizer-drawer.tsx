@@ -15,9 +15,6 @@ import {
   Check,
   RotateCcw,
   Sliders,
-  Shield,
-  UserCheck,
-  Briefcase,
 } from "lucide-react";
 
 export function CustomizerDrawer() {
@@ -32,8 +29,6 @@ export function CustomizerDrawer() {
     setLayout,
     direction,
     setDirection,
-    actingRole,
-    setActingRole,
     isCustomizerOpen,
     setIsCustomizerOpen,
     resetDefaults,
@@ -71,7 +66,7 @@ export function CustomizerDrawer() {
                 شخصی‌سازی ظاهر سنجاق
               </h2>
               <p className="text-xs text-muted-foreground mt-1">
-                تنظیم رنگ‌ها، چیدمان نوار ابزار و نقش کاربری
+                تنظیم رنگ‌ها، چیدمان نوار ابزار و تم سامانه
               </p>
             </div>
             <button
@@ -225,54 +220,6 @@ export function CustomizerDrawer() {
                   چپ‌به‌راست (LTR)
                 </button>
               </div>
-            </div>
-
-            {/* Acting Role Switcher */}
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                  شبیه‌سازی نقش کاربری (Demo Role)
-                </label>
-                <span className="text-[10px] px-2 py-0.5 rounded bg-muted text-muted-foreground">دمو فوری</span>
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  onClick={() => setActingRole("ADMIN")}
-                  className={`flex flex-col items-center justify-center p-2.5 rounded-xl border text-xs font-medium transition-all ${
-                    actingRole === "ADMIN"
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "border-border hover:bg-muted text-muted-foreground"
-                  }`}
-                >
-                  <Shield className="w-4 h-4 mb-1" />
-                  مدیر ارشد
-                </button>
-                <button
-                  onClick={() => setActingRole("MANAGER")}
-                  className={`flex flex-col items-center justify-center p-2.5 rounded-xl border text-xs font-medium transition-all ${
-                    actingRole === "MANAGER"
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "border-border hover:bg-muted text-muted-foreground"
-                  }`}
-                >
-                  <Briefcase className="w-4 h-4 mb-1" />
-                  مدیر فروش
-                </button>
-                <button
-                  onClick={() => setActingRole("SALES")}
-                  className={`flex flex-col items-center justify-center p-2.5 rounded-xl border text-xs font-medium transition-all ${
-                    actingRole === "SALES"
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "border-border hover:bg-muted text-muted-foreground"
-                  }`}
-                >
-                  <UserCheck className="w-4 h-4 mb-1" />
-                  کارشناس
-                </button>
-              </div>
-              <p className="text-[11px] text-muted-foreground mt-2 leading-relaxed">
-                با تعویض این گزینه منوها، دسترسی‌ها و آمارهای داشبورد بلافاصله به دید کارشناس یا مدیر تغییر می‌کند.
-              </p>
             </div>
           </div>
 

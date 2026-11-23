@@ -34,8 +34,10 @@ async function main() {
 
   // 2. Users: 1 ADMIN, 1 MANAGER, 3 SALES
   const adminPhone = process.env.SEED_ADMIN_PHONE || "09123456789";
+  const managerPhone = process.env.SEED_MANAGER_PHONE || "09120000002";
+  const salesPhone = process.env.SEED_SALES_PHONE || "09120000003";
 
-  await prisma.user.create({
+  const admin = await prisma.user.create({
     data: {
       name: "مدیر ارشد سنجاق",
       phone: adminPhone,
@@ -47,7 +49,7 @@ async function main() {
   const manager = await prisma.user.create({
     data: {
       name: "سارا احمدی (مدیر فروش)",
-      phone: "09120000002",
+      phone: managerPhone,
       email: "manager@sanjagh.ir",
       role: Role.MANAGER,
     },
@@ -56,7 +58,7 @@ async function main() {
   const sales1 = await prisma.user.create({
     data: {
       name: "علی رضایی (کارشناس فروش)",
-      phone: "09120000003",
+      phone: salesPhone,
       email: "ali@sanjagh.ir",
       role: Role.SALES,
     },
@@ -281,6 +283,7 @@ async function main() {
         description: "به محض ثبت یک سرنخ، پیامک خوش‌آمد ارسال شده و فردا وظیفه پیگیری برای کارشناس ایجاد می‌شود.",
         isActive: true,
         isPreset: true,
+        createdById: admin.id,
         trigger: AutomationTrigger.LEAD_CREATED,
         steps: [
           { type: "SEND_SMS", body: "سلام {{fullName}} عزیز، به خانواده سنجاق خوش آمدید! همکاران ما به زودی با شما تماس خواهند گرفت." },

@@ -2,7 +2,10 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useThemeCustomizer } from "../theme/theme-context";
+import { useUser } from "../auth/user-context";
+import { logoutAction } from "@/server/actions/auth";
 import {
   Search,
   Plus,
@@ -18,9 +21,42 @@ import {
 } from "lucide-react";
 
 export function AppHeader({ onOpenNewDeal }: { onOpenNewDeal?: () => void }) {
-  const { theme, setTheme, setIsCustomizerOpen, actingRole } = useThemeCustomizer();
+  const router = useRouter();
+  const { theme, setTheme, setIsCustomizerOpen } = useThemeCustomizer();
+  const { user } = useUser();
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+
+  const getInitials = () => {
+    if (user.name && user.name.trim().length > 0) {
+      const parts = user.name.trim().split(" ");
+      if (parts.length >= 2) {
+        return (parts[0][0] + parts[1][0]).toUpperCase();
+      }
+      return user.name.slice(0, 2).toUpperCase();
+    }
+    return user.role === "ADMIN" ? "AD" : user.role === "MANAGER" ? "MN" : "SL";
+  };
+
+  const getRoleLabel = () => {
+    switch (user.role) {
+      case "ADMIN":
+        return "مدیر ارشد";
+      case "MANAGER":
+        return "مدیر فروش";
+      case "SALES":
+        return "کارشناس فروش";
+      default:
+        return user.role;
+    }
+  };
+
+  const handleLogout = async () => {
+    setUserDropdownOpen(false);
+    await logoutAction();
+    router.push("/login");
+    router.refresh();
+  };
 
   return (
     <header className="h-16 border-b border-border bg-card/80 backdrop-blur-md px-6 flex items-center justify-between sticky top-0 z-10 transition-colors">
@@ -117,21 +153,17 @@ export function AppHeader({ onOpenNewDeal }: { onOpenNewDeal?: () => void }) {
             className="flex items-center gap-2 p-1.5 rounded-xl hover:bg-muted transition-colors"
           >
             <div className="w-8 h-8 rounded-xl bg-primary text-primary-foreground font-bold text-xs flex items-center justify-center shadow-sm">
-              {actingRole === "ADMIN" ? "AD" : actingRole === "MANAGER" ? "MN" : "SL"}
+              {getInitials()}
             </div>
           </button>
 
           {userDropdownOpen && (
             <div className="absolute left-0 mt-2 w-56 bg-card border border-border rounded-2xl shadow-xl p-2 z-50 text-right space-y-1">
               <div className="px-3 py-2 border-b border-border">
-                <p className="text-xs font-bold text-foreground">
-                  {actingRole === "ADMIN"
-                    ? "مدیر ارشد سنجاق"
-                    : actingRole === "MANAGER"
-                    ? "سارا احمدی (مدیر فروش)"
-                    : "علی رضایی (کارشناس فروش)"}
+                <p className="text-xs font-bold text-foreground truncate">
+                  {user.name} ({getRoleLabel()})
                 </p>
-                <p className="text-[10px] text-muted-foreground">09123456789</p>
+                <p className="text-[10px] text-muted-foreground font-mono">{user.phone}</p>
               </div>
               <Link
                 href="/settings"
@@ -152,14 +184,13 @@ export function AppHeader({ onOpenNewDeal }: { onOpenNewDeal?: () => void }) {
                 <span>تنظیمات ظاهر و تم</span>
               </button>
               <div className="border-t border-border my-1" />
-              <Link
-                href="/login"
-                onClick={() => setUserDropdownOpen(false)}
-                className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs hover:bg-destructive/10 text-destructive transition-colors"
+              <button
+                onClick={handleLogout}
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs hover:bg-destructive/10 text-destructive transition-colors text-right"
               >
                 <LogOut className="w-4 h-4" />
                 <span>خروج از حساب</span>
-              </Link>
+              </button>
             </div>
           )}
         </div>

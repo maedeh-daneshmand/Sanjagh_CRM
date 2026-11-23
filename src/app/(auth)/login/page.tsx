@@ -11,6 +11,11 @@ import {
 } from "lucide-react";
 import { SplashScreen } from "@/components/auth/splash-screen";
 import { useThemeCustomizer, ColorPalette } from "@/components/theme/theme-context";
+import {
+  requestOtpAction,
+  verifyOtpAction,
+  getLoginConfigAction,
+} from "@/server/actions/auth";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -25,7 +30,32 @@ export default function LoginPage() {
   const [timer, setTimer] = useState(120);
   const [forceSplash, setForceSplash] = useState(false);
 
+  const [demoConfig, setDemoConfig] = useState<{
+    demoMode: boolean;
+    demoPhones: { admin: string; manager: string; sales: string };
+  }>({
+    demoMode: false,
+    demoPhones: {
+      admin: "09123456789",
+      manager: "09120000002",
+      sales: "09120000003",
+    },
+  });
+
   const otpInputsRef = useRef<(HTMLInputElement | null)[]>([]);
+
+  // Load demo configuration from server
+  useEffect(() => {
+    let mounted = true;
+    getLoginConfigAction().then((cfg) => {
+      if (mounted) {
+        setDemoConfig(cfg);
+      }
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   // 2-minute countdown timer for OTP
   useEffect(() => {
@@ -42,7 +72,7 @@ export default function LoginPage() {
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
-  const handleSendOtp = (e: React.FormEvent) => {
+  const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
@@ -55,15 +85,24 @@ export default function LoginPage() {
     }
 
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      const generatedCode = "123456";
-      setDebugCode(generatedCode);
+    try {
+      const res = await requestOtpAction(normalizedPhone);
+      if (!res.ok) {
+        setError(res.error || "خطا در ارسال کد ورود");
+        setLoading(false);
+        return;
+      }
+
+      setDebugCode(res.demoCode || null);
       setStep("code");
       setTimer(120);
       setOtp(["", "", "", "", "", ""]);
       setTimeout(() => otpInputsRef.current[0]?.focus(), 100);
-    }, 700);
+    } catch {
+      setError("خطا در برقراری ارتباط با سرور. لطفاً مجدداً تلاش کنید.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleOtpChange = (index: number, value: string) => {
@@ -100,7 +139,7 @@ export default function LoginPage() {
     otpInputsRef.current[nextIndex]?.focus();
   };
 
-  const handleVerifyOtp = (e: React.FormEvent) => {
+  const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
@@ -111,33 +150,71 @@ export default function LoginPage() {
     }
 
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      // Navigate to dashboard
+    try {
+      const res = await verifyOtpAction(phone, fullCode);
+      if (!res.ok) {
+        setError(res.error || "کد وارد شده صحیح نمی‌باشد.");
+        setLoading(false);
+        return;
+      }
+
       router.push("/");
-    }, 600);
+      router.refresh();
+    } catch {
+      setError("خطا در تایید کد ورود. لطفاً مجدداً تلاش فرمایید.");
+      setLoading(false);
+    }
   };
 
-  const handleResendCode = () => {
+  const handleResendCode = async () => {
     if (timer > 0) return;
     setError(null);
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      const res = await requestOtpAction(phone);
+      if (!res.ok) {
+        setError(res.error || "خطا در ارسال مجدد کد");
+        setLoading(false);
+        return;
+      }
       setTimer(120);
-      setDebugCode("123456");
+      setDebugCode(res.demoCode || null);
       setOtp(["", "", "", "", "", ""]);
       otpInputsRef.current[0]?.focus();
-    }, 500);
+    } catch {
+      setError("خطا در ارسال مجدد کد.");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const quickLoginAs = (demoPhone: string) => {
+  const quickLoginAs = async (demoPhone: string) => {
+    if (!demoConfig.demoMode) return;
     setPhone(demoPhone);
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+    setError(null);
+
+    try {
+      const reqRes = await requestOtpAction(demoPhone);
+      if (!reqRes.ok) {
+        setError(reqRes.error || "خطا در ورود تستی");
+        setLoading(false);
+        return;
+      }
+      const code = reqRes.demoCode || "123456";
+      const verifyRes = await verifyOtpAction(demoPhone, code);
+      if (!verifyRes.ok) {
+        setError(verifyRes.error || "خطا در تایید کد تستی");
+        setLoading(false);
+        return;
+      }
+
       router.push("/");
-    }, 400);
+      router.refresh();
+    } catch {
+      setError("خطا در ورود سریع");
+      setLoading(false);
+    }
   };
 
   const palettes: { key: ColorPalette; colorHex: string; title: string }[] = [
@@ -343,35 +420,37 @@ export default function LoginPage() {
             </form>
           )}
 
-          {/* Quick Demo Access (for frictionless client test) */}
-          <div className="pt-4 border-t border-border/80 space-y-2.5">
-            <div className="text-[11px] font-bold text-muted-foreground text-center">
-              ورود سریع با نقش‌های سازمانی (تست دمو)
+          {/* Quick Demo Access (renders only when DEMO_MODE=true and fake provider) */}
+          {demoConfig.demoMode && (
+            <div className="pt-4 border-t border-border/80 space-y-2.5">
+              <div className="text-[11px] font-bold text-muted-foreground text-center">
+                ورود سریع با نقش‌های سازمانی (تست دمو)
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => quickLoginAs(demoConfig.demoPhones.admin)}
+                  className="p-2.5 rounded-xl border border-border bg-card/60 hover:bg-primary/10 hover:border-primary text-foreground text-center transition-all font-semibold active:scale-95"
+                >
+                  مدیر ارشد
+                </button>
+                <button
+                  type="button"
+                  onClick={() => quickLoginAs(demoConfig.demoPhones.manager)}
+                  className="p-2.5 rounded-xl border border-border bg-card/60 hover:bg-primary/10 hover:border-primary text-foreground text-center transition-all font-semibold active:scale-95"
+                >
+                  مدیر فروش
+                </button>
+                <button
+                  type="button"
+                  onClick={() => quickLoginAs(demoConfig.demoPhones.sales)}
+                  className="p-2.5 rounded-xl border border-border bg-card/60 hover:bg-primary/10 hover:border-primary text-foreground text-center transition-all font-semibold active:scale-95"
+                >
+                  کارشناس
+                </button>
+              </div>
             </div>
-            <div className="grid grid-cols-3 gap-2 text-xs">
-              <button
-                type="button"
-                onClick={() => quickLoginAs("09123456789")}
-                className="p-2.5 rounded-xl border border-border bg-card/60 hover:bg-primary/10 hover:border-primary text-foreground text-center transition-all font-semibold active:scale-95"
-              >
-                مدیر ارشد
-              </button>
-              <button
-                type="button"
-                onClick={() => quickLoginAs("09120000002")}
-                className="p-2.5 rounded-xl border border-border bg-card/60 hover:bg-primary/10 hover:border-primary text-foreground text-center transition-all font-semibold active:scale-95"
-              >
-                مدیر فروش
-              </button>
-              <button
-                type="button"
-                onClick={() => quickLoginAs("09120000003")}
-                className="p-2.5 rounded-xl border border-border bg-card/60 hover:bg-primary/10 hover:border-primary text-foreground text-center transition-all font-semibold active:scale-95"
-              >
-                کارشناس
-              </button>
-            </div>
-          </div>
+          )}
         </div>
       </div>
     </>
