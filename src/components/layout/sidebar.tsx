@@ -35,7 +35,7 @@ interface MenuSection {
   items: MenuItem[];
 }
 
-export function AppSidebar() {
+export function AppSidebar({ overdueTasksCount = 0 }: { overdueTasksCount?: number }) {
   const pathname = usePathname();
   const { layout } = useThemeCustomizer();
   const { user } = useUser();
@@ -86,10 +86,10 @@ export function AppSidebar() {
           href: "/tasks",
           icon: CheckSquare,
           roles: ["ADMIN", "MANAGER", "SALES"],
-          badge: "3",
+          badge: overdueTasksCount > 0 ? String(overdueTasksCount) : undefined,
         },
         {
-          name: "تقویم جلالی",
+          name: "تقویم",
           href: "/calendar",
           icon: Calendar,
           roles: ["ADMIN", "MANAGER", "SALES"],
