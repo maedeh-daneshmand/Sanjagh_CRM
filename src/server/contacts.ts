@@ -257,6 +257,13 @@ export interface ContactDetailData {
     risk: string | null;
     nextStep: string | null;
   } | null;
+  aiSuggestions: {
+    id: string;
+    type: string;
+    payload: unknown;
+    status: string;
+    createdAt: string;
+  }[];
 }
 
 export async function getContact(id: string): Promise<ContactDetailData | null> {
@@ -287,6 +294,11 @@ export async function getContact(id: string): Promise<ContactDetailData | null> 
       },
       aiSummary: {
         select: { summary: true, risk: true, nextStep: true },
+      },
+      suggestions: {
+        orderBy: { createdAt: "desc" },
+        take: 20,
+        select: { id: true, type: true, payload: true, status: true, createdAt: true },
       },
     },
   });
@@ -350,5 +362,12 @@ export async function getContact(id: string): Promise<ContactDetailData | null> 
       createdAt: m.createdAt.toISOString(),
     })),
     aiSummary: contact.aiSummary,
+    aiSuggestions: contact.suggestions.map((s) => ({
+      id: s.id,
+      type: s.type,
+      payload: s.payload,
+      status: s.status,
+      createdAt: s.createdAt.toISOString(),
+    })),
   };
 }

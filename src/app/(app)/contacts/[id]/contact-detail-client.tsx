@@ -12,6 +12,13 @@ import {
   assignOwnerAction,
 } from "@/server/actions/contacts";
 import { sendSingleMessageAction } from "@/server/actions/messages";
+import {
+  summarizeContactAction,
+  analyzeNoteAction,
+  approveSuggestionAction,
+  rejectSuggestionAction,
+} from "@/server/actions/ai";
+import { AiSuggestionPayload } from "@/lib/schemas/ai";
 import { Channel } from "@prisma/client";
 import { useUser } from "@/components/auth/user-context";
 import { OwnerSelect } from "@/components/contacts/owner-select";
@@ -64,13 +71,43 @@ export default function ContactDetailClient({
     initialContact.aiSummary
   );
   const [loadingAiSummary, setLoadingAiSummary] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   // AI Feature 2: Smart Note Parser suggestions
+  const formatSuggestionCard = (s: {
+    id: string;
+    type: string;
+    payload: unknown;
+    status: string;
+  }) => {
+    const p = s.payload as AiSuggestionPayload;
+    let title = s.type;
+    let desc = "";
+    if (p?.type === "CREATE_TASK") {
+      title = `ایجاد وظیفه: ${p.title}`;
+      desc = p.dueAt ? `سررسید: ${formatJalaliDate(p.dueAt, "full")}` : `اولویت: ${p.priority}`;
+    } else if (p?.type === "CHANGE_DEAL_STAGE") {
+      title = `انتقال معامله به مرحله ${p.toStage}`;
+      desc = p.reason || "پیشنهاد تغییر مرحله معامله";
+    } else if (p?.type === "CHANGE_LEAD_STATUS") {
+      title = `تغییر وضعیت سرنخ به ${p.status}`;
+      desc = p.reason || "پیشنهاد تغییر وضعیت سرنخ";
+    }
+    return {
+      id: s.id,
+      type: s.type,
+      title,
+      desc,
+      status: s.status as "PENDING" | "ACCEPTED" | "REJECTED",
+    };
+  };
+
   const [smartNoteText, setSmartNoteText] = useState("");
-  const [aiSuggestions, setAiSuggestions] = useState<
-    { id: string; type: string; title: string; desc: string; status: "PENDING" | "ACCEPTED" | "REJECTED" }[]
-  >([]);
+  const [aiSuggestions, setAiSuggestions] = useState(
+    (initialContact.aiSuggestions || []).map(formatSuggestionCard)
+  );
   const [isAnalyzingSmartNote, setIsAnalyzingSmartNote] = useState(false);
+  const [decidingSugId, setDecidingSugId] = useState<string | null>(null);
 
   const handleAddNote = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -174,44 +211,62 @@ export default function ContactDetailClient({
     ]);
   };
 
-  const handleGenerateAiSummary = () => {
+  const handleGenerateAiSummary = async () => {
     setLoadingAiSummary(true);
-    setTimeout(() => {
-      setAiSummary({
-        summary: `مخاطب ${contact.fullName} از شرکت ${contact.company || "نامشخص"} با امتیاز حرارتی ${contact.score} در وضعیت مناسبی برای تعامل و نهایی‌سازی است.`,
-        risk: contact.score >= 70 ? "پایین (پتانسیل بالا)" : "متوسط (نیازمند پیگیری مستمر)",
-        nextStep: "ارسال نسخه نهایی پیش‌فاکتور و تماس تلفنی برای امضای نهایی قرارداد تا فردا.",
-      });
-      setLoadingAiSummary(false);
-    }, 900);
+    setAiError(null);
+    const res = await summarizeContactAction(contact.id);
+    setLoadingAiSummary(false);
+
+    if (!res.ok || !res.data) {
+      setAiError(res.error || "خطا در دریافت خلاصه هوشمند");
+      return;
+    }
+
+    setAiSummary(res.data);
   };
 
-  const handleAnalyzeSmartNote = () => {
-    if (!smartNoteText) return;
+  const handleAnalyzeSmartNote = async () => {
+    if (!smartNoteText.trim()) return;
     setIsAnalyzingSmartNote(true);
+    setAiError(null);
 
-    setTimeout(() => {
-      setAiSuggestions([
-        {
-          id: "sug1",
-          type: "CREATE_TASK",
-          title: "ایجاد وظیفه خودکار: پیگیری قرارداد امضا شده",
-          desc: `فردا ساعت ۱۴:۰۰ با مدیر فنی شرکت ${contact.company || contact.fullName} تماس گرفته شود.`,
-          status: "PENDING",
-        },
-        {
-          id: "sug2",
-          type: "CHANGE_DEAL_STAGE",
-          title: "انتقال معامله به مرحله برنده (WON)",
-          desc: "انتقال معامله مربوطه از مذاکره به وضعیت برنده.",
-          status: "PENDING",
-        },
-      ]);
-      setIsAnalyzingSmartNote(false);
-    }, 800);
+    const res = await analyzeNoteAction(contact.id, smartNoteText);
+    setIsAnalyzingSmartNote(false);
+
+    if ("noteActivity" in res && res.noteActivity) {
+      setActivities((prev) => [res.noteActivity!, ...prev]);
+      setSmartNoteText("");
+    }
+
+    if (!res.ok || !res.data) {
+      setAiError(res.error || "خطا در تحلیل هوشمند یادداشت");
+      return;
+    }
+
+    const newCards = res.data.suggestions.map((s) =>
+      formatSuggestionCard({
+        id: s.id,
+        type: s.type,
+        payload: s.payload,
+        status: s.status,
+      })
+    );
+    setAiSuggestions((prev) => [...newCards, ...prev]);
   };
 
-  const handleDecideSuggestion = (sugId: string, action: "ACCEPTED" | "REJECTED") => {
+  const handleDecideSuggestion = async (sugId: string, action: "ACCEPTED" | "REJECTED") => {
+    setDecidingSugId(sugId);
+    const res =
+      action === "ACCEPTED"
+        ? await approveSuggestionAction(sugId)
+        : await rejectSuggestionAction(sugId);
+    setDecidingSugId(null);
+
+    if (!res.ok) {
+      alert(res.error || "خطا در اعمال تصمیم");
+      return;
+    }
+
     setAiSuggestions(
       aiSuggestions.map((s) => (s.id === sugId ? { ...s, status: action } : s))
     );
@@ -270,6 +325,16 @@ export default function ContactDetailClient({
           </button>
         </div>
       </div>
+
+      {/* AI Error / Not Configured Notice */}
+      {aiError && (
+        <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400 text-xs font-semibold flex items-center justify-between">
+          <span>{aiError}</span>
+          <button onClick={() => setAiError(null)} className="p-1 hover:bg-amber-500/10 rounded-lg">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* AI Summary Box (if generated) */}
       {aiSummary && (
@@ -425,13 +490,15 @@ export default function ContactDetailClient({
                       <div className="flex items-center justify-end gap-2 pt-1">
                         <button
                           onClick={() => handleDecideSuggestion(sug.id, "REJECTED")}
-                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-border text-[11px] font-semibold text-rose-500 hover:bg-rose-500/10"
+                          disabled={decidingSugId === sug.id}
+                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-border text-[11px] font-semibold text-rose-500 hover:bg-rose-500/10 disabled:opacity-50"
                         >
                           <X className="w-3 h-3" /> رد
                         </button>
                         <button
                           onClick={() => handleDecideSuggestion(sug.id, "ACCEPTED")}
-                          className="flex items-center gap-1 px-3 py-1 rounded-lg bg-emerald-600 text-white text-[11px] font-bold hover:bg-emerald-700 shadow-sm"
+                          disabled={decidingSugId === sug.id}
+                          className="flex items-center gap-1 px-3 py-1 rounded-lg bg-emerald-600 text-white text-[11px] font-bold hover:bg-emerald-700 shadow-sm disabled:opacity-50"
                         >
                           <Check className="w-3 h-3" /> تأیید و اعمال
                         </button>

@@ -12,6 +12,7 @@ import {
   getCampaignFailedMessagesAction,
 } from "@/server/actions/campaigns";
 import { retryFailedMessageAction } from "@/server/actions/messages";
+import { draftTemplateWithAiAction } from "@/server/actions/ai";
 import { formatJalaliDate } from "@/lib/jalali";
 import {
   Megaphone,
@@ -438,15 +439,38 @@ export default function CampaignsClient({
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="font-semibold">متن پیام *</label>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setNewCampaign({ ...newCampaign, body: newCampaign.body + " {{fullName}} " })
-                    }
-                    className="text-[10px] text-primary hover:underline flex items-center gap-1"
-                  >
-                    <Sparkles className="w-3 h-3" /> درج متغیر نام مشتری
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const res = await draftTemplateWithAiAction({
+                          channel: newCampaign.channel,
+                          topic: newCampaign.name || "معرفی محصول و پیشنهاد ویژه",
+                        });
+                        if (res.ok && res.data) {
+                          setNewCampaign((prev) => ({
+                            ...prev,
+                            body: res.data!.body,
+                            subject: res.data!.subject || prev.subject,
+                          }));
+                        } else {
+                          setFormError(res.error || "خطا در نگارش با هوش مصنوعی");
+                        }
+                      }}
+                      className="text-[10px] text-primary hover:underline flex items-center gap-1 font-bold"
+                    >
+                      <Sparkles className="w-3 h-3" /> نگارش با AI
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setNewCampaign({ ...newCampaign, body: newCampaign.body + " {{fullName}} " })
+                      }
+                      className="text-[10px] text-primary hover:underline flex items-center gap-1"
+                    >
+                      <Sparkles className="w-3 h-3" /> درج متغیر نام مشتری
+                    </button>
+                  </div>
                 </div>
                 <textarea
                   rows={4}

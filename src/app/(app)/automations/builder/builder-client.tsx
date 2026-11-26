@@ -13,6 +13,8 @@ import {
   saveAutomationAction,
   testRunAutomationAction,
 } from "@/server/actions/automations";
+import { draftTemplateWithAiAction } from "@/server/actions/ai";
+import { Channel } from "@prisma/client";
 import {
   Play,
   Save,
@@ -365,22 +367,76 @@ export default function BuilderClient({
               )}
 
               {step.type === "SEND_SMS" && (
-                <textarea
-                  rows={2}
-                  value={step.body}
-                  onChange={(e) =>
-                    setSteps(
-                      steps.map((s, i) =>
-                        i === index ? { ...step, body: e.target.value } : s
+                <div className="space-y-1.5">
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const res = await draftTemplateWithAiAction({
+                          channel: Channel.SMS,
+                          topic: name,
+                        });
+                        if (res.ok && res.data) {
+                          setSteps(
+                            steps.map((s, i) =>
+                              i === index ? { ...step, body: res.data!.body } : s
+                            )
+                          );
+                        } else {
+                          alert(res.error || "خطا در نگارش با هوش مصنوعی");
+                        }
+                      }}
+                      className="text-[10px] text-primary font-bold hover:underline"
+                    >
+                      ✨ نگارش با AI
+                    </button>
+                  </div>
+                  <textarea
+                    rows={2}
+                    value={step.body}
+                    onChange={(e) =>
+                      setSteps(
+                        steps.map((s, i) =>
+                          i === index ? { ...step, body: e.target.value } : s
+                        )
                       )
-                    )
-                  }
-                  className="w-full p-2 bg-muted/40 border border-border rounded-xl"
-                />
+                    }
+                    className="w-full p-2 bg-muted/40 border border-border rounded-xl"
+                  />
+                </div>
               )}
 
               {step.type === "SEND_EMAIL" && (
                 <div className="space-y-2">
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const res = await draftTemplateWithAiAction({
+                          channel: Channel.EMAIL,
+                          topic: name,
+                        });
+                        if (res.ok && res.data) {
+                          setSteps(
+                            steps.map((s, i) =>
+                              i === index
+                                ? {
+                                    ...step,
+                                    subject: res.data!.subject || step.subject,
+                                    body: res.data!.body,
+                                  }
+                                : s
+                            )
+                          );
+                        } else {
+                          alert(res.error || "خطا در نگارش با هوش مصنوعی");
+                        }
+                      }}
+                      className="text-[10px] text-primary font-bold hover:underline"
+                    >
+                      ✨ نگارش با AI
+                    </button>
+                  </div>
                   <input
                     type="text"
                     value={step.subject}
