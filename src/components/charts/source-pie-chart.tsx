@@ -2,17 +2,11 @@
 
 import React, { useSyncExternalStore } from "react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
-
-const sourceData = [
-  { name: "وب‌سایت مستقیم", value: 35, color: "#10b981" },
-  { name: "اینستاگرام", value: 28, color: "#06b6d4" },
-  { name: "معرفی و توصیه", value: 22, color: "#3b82f6" },
-  { name: "شبکه‌های اجتماعی", value: 15, color: "#a855f7" },
-];
+import type { SourceSharePoint } from "@/server/dashboard";
 
 const emptySubscribe = () => () => {};
 
-export default function SourcePieChart() {
+export default function SourcePieChart({ data }: { data: SourceSharePoint[] }) {
   const mounted = useSyncExternalStore(emptySubscribe, () => true, () => false);
 
   if (!mounted) {
@@ -23,12 +17,20 @@ export default function SourcePieChart() {
     );
   }
 
+  if (data.length === 0) {
+    return (
+      <div className="h-52 w-full flex items-center justify-center text-xs text-muted-foreground">
+        داده‌ای برای نمایش وجود ندارد
+      </div>
+    );
+  }
+
   return (
     <div className="h-52 w-full flex items-center justify-center my-2">
       <ResponsiveContainer width="100%" height="100%">
         <PieChart>
           <Pie
-            data={sourceData}
+            data={data}
             cx="50%"
             cy="50%"
             innerRadius={50}
@@ -36,7 +38,7 @@ export default function SourcePieChart() {
             paddingAngle={4}
             dataKey="value"
           >
-            {sourceData.map((entry, index) => (
+            {data.map((entry, index) => (
               <Cell key={`cell-${index}`} fill={entry.color} />
             ))}
           </Pie>

@@ -2,6 +2,7 @@
 
 import React, { useSyncExternalStore } from "react";
 import { formatNumber } from "@/lib/utils";
+import type { MonthlySalesPoint } from "@/server/dashboard";
 import {
   AreaChart,
   Area,
@@ -12,20 +13,15 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-const monthlyData = [
-  { month: "فروردین", revenue: 28000, deals: 18 },
-  { month: "اردیبهشت", revenue: 34000, deals: 22 },
-  { month: "خرداد", revenue: 31000, deals: 20 },
-  { month: "تیر", revenue: 42000, deals: 29 },
-  { month: "مرداد", revenue: 39000, deals: 26 },
-  { month: "شهریور", revenue: 46000, deals: 31 },
-  { month: "مهر", revenue: 52000, deals: 36 },
-  { month: "آبان", revenue: 48295, deals: 34 },
-];
-
 const emptySubscribe = () => () => {};
 
-export default function RevenueChart() {
+export default function RevenueChart({
+  data,
+  metric = "revenue",
+}: {
+  data: MonthlySalesPoint[];
+  metric?: "revenue" | "deals";
+}) {
   const mounted = useSyncExternalStore(emptySubscribe, () => true, () => false);
 
   if (!mounted) {
@@ -39,7 +35,7 @@ export default function RevenueChart() {
   return (
     <div className="h-72 w-full pt-2">
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={monthlyData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+        <AreaChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
           <defs>
             <linearGradient id="revenueGrad" x1="0" y1="0" x2="0" y2="1">
               <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.4} />
@@ -51,12 +47,16 @@ export default function RevenueChart() {
           <YAxis
             tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
             stroke="none"
-            tickFormatter={(val) => `${val / 1000}k`}
+            tickFormatter={(val) =>
+              metric === "revenue" ? `${Math.round(Number(val) / 1000)}k` : `${val}`
+            }
           />
           <Tooltip
             formatter={(value: unknown) => [
-              `${typeof value === "number" || typeof value === "string" ? formatNumber(value) : ""} هزار تومان`,
-              "درآمد",
+              metric === "revenue"
+                ? `${typeof value === "number" || typeof value === "string" ? formatNumber(value) : "0"} هزار تومان`
+                : `${typeof value === "number" || typeof value === "string" ? formatNumber(value) : "0"} معامله`,
+              metric === "revenue" ? "درآمد" : "تعداد معاملات",
             ]}
             contentStyle={{
               backgroundColor: "hsl(var(--card))",
@@ -68,7 +68,7 @@ export default function RevenueChart() {
           />
           <Area
             type="monotone"
-            dataKey="revenue"
+            dataKey={metric}
             stroke="hsl(var(--primary))"
             strokeWidth={2.5}
             fillOpacity={1}
