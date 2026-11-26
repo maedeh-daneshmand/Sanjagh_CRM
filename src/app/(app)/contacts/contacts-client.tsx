@@ -4,8 +4,15 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { formatNumber } from "@/lib/utils";
 import { formatJalaliDate } from "@/lib/jalali";
-import { SerializableContact } from "@/server/contacts";
-import { createContactAction, deleteContactAction } from "@/server/actions/contacts";
+import { SerializableContact, AssignableUser } from "@/server/contacts";
+import {
+  createContactAction,
+  deleteContactAction,
+  assignOwnerAction,
+  assignManyAction,
+} from "@/server/actions/contacts";
+import { useUser } from "@/components/auth/user-context";
+import { OwnerSelect } from "@/components/contacts/owner-select";
 import { Source, Priority, ContactKind } from "@prisma/client";
 import {
   Users,
@@ -14,29 +21,61 @@ import {
   Eye,
   Trash2,
   X,
+  CheckCircle2,
 } from "lucide-react";
 
 export default function ContactsClient({
   initialContacts,
+  assignableUsers,
 }: {
   initialContacts: SerializableContact[];
+  assignableUsers: AssignableUser[];
 }) {
+  const { user } = useUser();
+  const canAssign = user.role === "ADMIN" || user.role === "MANAGER";
+
+  const defaultOwnerId = canAssign
+    ? assignableUsers.some((u) => u.id === user.id)
+      ? user.id
+      : null
+    : user.id;
+
   const [contacts, setContacts] = useState<SerializableContact[]>(initialContacts);
   const [search, setSearch] = useState("");
   const [selectedTag, setSelectedTag] = useState<string>("ALL");
   const [showAddModal, setShowAddModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [assigningId, setAssigningId] = useState<string | null>(null);
 
-  const [newContact, setNewContact] = useState({
+  // Bulk assign state
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkOwnerId, setBulkOwnerId] = useState<string | null>(
+    assignableUsers[0]?.id ?? null
+  );
+  const [isBulkAssigning, setIsBulkAssigning] = useState(false);
+
+  const [newContact, setNewContact] = useState<{
+    fullName: string;
+    company: string;
+    phone: string;
+    email: string;
+    city: string;
+    source: Source;
+    priority: Priority;
+    tagInput: string;
+    ownerId: string | null;
+  }>({
     fullName: "",
     company: "",
     phone: "",
     email: "",
     city: "تهران",
-    source: "WEBSITE" as Source,
-    priority: "HIGH" as Priority,
+    source: "WEBSITE",
+    priority: "HIGH",
     tagInput: "",
+    ownerId: defaultOwnerId,
   });
 
   const filteredContacts = contacts.filter((c) => {
@@ -50,6 +89,88 @@ export default function ContactsClient({
 
     return matchesSearch && matchesTag;
   });
+
+  const allFilteredSelected =
+    filteredContacts.length > 0 &&
+    filteredContacts.every((c) => selectedIds.includes(c.id));
+
+  const toggleSelectAll = () => {
+    if (allFilteredSelected) {
+      const filteredSet = new Set(filteredContacts.map((c) => c.id));
+      setSelectedIds(selectedIds.filter((id) => !filteredSet.has(id)));
+    } else {
+      const merged = new Set([...selectedIds, ...filteredContacts.map((c) => c.id)]);
+      setSelectedIds(Array.from(merged));
+    }
+  };
+
+  const toggleSelectRow = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const showToast = (msg: string) => {
+    setStatusMessage(msg);
+    setTimeout(() => setStatusMessage(null), 4000);
+  };
+
+  const handleAssignOwner = async (contactId: string, newOwnerId: string | null) => {
+    setAssigningId(contactId);
+    const res = await assignOwnerAction({ contactId, ownerId: newOwnerId });
+    setAssigningId(null);
+
+    if (!res.ok) {
+      alert(res.error || "خطا در تخصیص کارشناس");
+      return;
+    }
+
+    const updatedOwnerName = res.data?.ownerName ?? null;
+    setContacts((prev) =>
+      prev.map((c) =>
+        c.id === contactId
+          ? { ...c, ownerId: newOwnerId, ownerName: updatedOwnerName }
+          : c
+      )
+    );
+    showToast(
+      updatedOwnerName
+        ? `مشتری با موفقیت به «${updatedOwnerName}» تخصیص داده شد.`
+        : "تخصیص مشتری برداشته شد."
+    );
+  };
+
+  const handleBulkAssign = async () => {
+    if (selectedIds.length === 0) return;
+    setIsBulkAssigning(true);
+    const res = await assignManyAction({
+      contactIds: selectedIds,
+      ownerId: bulkOwnerId,
+    });
+    setIsBulkAssigning(false);
+
+    if (!res.ok) {
+      alert(res.error || "خطا در تخصیص گروهی");
+      return;
+    }
+
+    const updatedOwnerName = res.data?.ownerName ?? null;
+    const selectedSet = new Set(selectedIds);
+    setContacts((prev) =>
+      prev.map((c) =>
+        selectedSet.has(c.id)
+          ? { ...c, ownerId: bulkOwnerId, ownerName: updatedOwnerName }
+          : c
+      )
+    );
+    const count = res.data?.count ?? selectedIds.length;
+    setSelectedIds([]);
+    showToast(
+      updatedOwnerName
+        ? `${count} مشتری با موفقیت به «${updatedOwnerName}» تخصیص داده شد.`
+        : `تخصیص ${count} مشتری برداشته شد.`
+    );
+  };
 
   const handleAddContact = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -72,6 +193,7 @@ export default function ContactsClient({
       priority: newContact.priority,
       kind: ContactKind.CUSTOMER,
       tags,
+      ...(canAssign ? { ownerId: newContact.ownerId } : {}),
     });
 
     setIsSubmitting(false);
@@ -94,12 +216,12 @@ export default function ContactsClient({
         sourceNote: null,
         leadStatus: "NEW",
         priority: newContact.priority,
-        score: 25,
+        score: res.data.score ?? 25,
         tags,
         notes: null,
-        ownerId: null,
-        ownerName: null,
-        createdById: "",
+        ownerId: res.data.ownerId ?? null,
+        ownerName: res.data.ownerName ?? null,
+        createdById: user.id,
         convertedAt: null,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -119,6 +241,7 @@ export default function ContactsClient({
       source: "WEBSITE",
       priority: "HIGH",
       tagInput: "",
+      ownerId: defaultOwnerId,
     });
   };
 
@@ -127,6 +250,7 @@ export default function ContactsClient({
     const res = await deleteContactAction(id);
     if (res.ok) {
       setContacts(contacts.filter((c) => c.id !== id));
+      setSelectedIds((prev) => prev.filter((item) => item !== id));
     } else {
       alert(res.error || "خطا در حذف مشتری");
     }
@@ -155,6 +279,13 @@ export default function ContactsClient({
           </button>
         </div>
       </div>
+
+      {statusMessage && (
+        <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 text-xs font-bold flex items-center gap-2 transition-all">
+          <CheckCircle2 className="w-4 h-4" />
+          <span>{statusMessage}</span>
+        </div>
+      )}
 
       {/* Filter and Search Bar */}
       <div className="p-4 rounded-2xl bg-card border border-border shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
@@ -188,17 +319,62 @@ export default function ContactsClient({
         </div>
       </div>
 
+      {/* Bulk Assign Toolbar for MANAGER / ADMIN */}
+      {canAssign && selectedIds.length > 0 && (
+        <div className="p-3.5 rounded-2xl bg-primary/5 border border-primary/20 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2 font-bold text-primary">
+            <span>{selectedIds.length} مشتری انتخاب شده</span>
+            <button
+              type="button"
+              onClick={() => setSelectedIds([])}
+              className="text-[11px] font-medium text-muted-foreground hover:text-foreground underline"
+            >
+              لغو انتخاب
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <OwnerSelect
+              users={assignableUsers}
+              value={bulkOwnerId}
+              onChange={setBulkOwnerId}
+              compact
+              disabled={isBulkAssigning}
+            />
+            <button
+              type="button"
+              onClick={handleBulkAssign}
+              disabled={isBulkAssigning}
+              className="px-3.5 py-1.5 rounded-xl bg-primary text-primary-foreground font-bold shadow-sm hover:opacity-90 disabled:opacity-50 transition-all"
+            >
+              {isBulkAssigning ? "در حال تخصیص..." : "تخصیص به کارشناس"}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Contacts Table */}
       <div className="rounded-2xl bg-card border border-border shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-right text-xs">
             <thead>
               <tr className="border-b border-border bg-muted/30 text-muted-foreground">
+                {canAssign && (
+                  <th className="p-4 w-10 text-center">
+                    <input
+                      type="checkbox"
+                      checked={allFilteredSelected}
+                      onChange={toggleSelectAll}
+                      aria-label="انتخاب همه"
+                      className="rounded border-border accent-primary cursor-pointer"
+                    />
+                  </th>
+                )}
                 <th className="p-4 font-bold">نام و نام خانوادگی</th>
                 <th className="p-4 font-bold">شرکت / سازمان</th>
                 <th className="p-4 font-bold">شماره تماس</th>
                 <th className="p-4 font-bold">شهر</th>
                 <th className="p-4 font-bold">مجموع خرید (تومان)</th>
+                <th className="p-4 font-bold">کارشناس مسئول</th>
                 <th className="p-4 font-bold">تاریخ ثبت</th>
                 <th className="p-4 font-bold">برچسب‌ها</th>
                 <th className="p-4 font-bold text-center">عملیات</th>
@@ -207,68 +383,98 @@ export default function ContactsClient({
             <tbody className="divide-y divide-border">
               {filteredContacts.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-12 text-muted-foreground">
+                  <td colSpan={canAssign ? 10 : 9} className="text-center py-12 text-muted-foreground">
                     مشتری با این مشخصات یافت نشد.
                   </td>
                 </tr>
               ) : (
-                filteredContacts.map((contact) => (
-                  <tr key={contact.id} className="hover:bg-muted/30 transition-colors">
-                    <td className="p-4">
-                      <Link
-                        href={`/contacts/${contact.id}`}
-                        className="font-bold text-foreground hover:text-primary transition-colors flex items-center gap-2"
-                      >
-                        <div className="w-8 h-8 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center shrink-0">
-                          {contact.fullName[0]}
-                        </div>
-                        <div>
-                          <div>{contact.fullName}</div>
-                          <div className="text-[10px] text-muted-foreground">{contact.email || "-"}</div>
-                        </div>
-                      </Link>
-                    </td>
-                    <td className="p-4 font-medium text-foreground">{contact.company || "-"}</td>
-                    <td className="p-4 font-mono text-muted-foreground">{contact.phone || "-"}</td>
-                    <td className="p-4 text-muted-foreground">{contact.city || "-"}</td>
-                    <td className="p-4 font-bold font-mono text-foreground">
-                      {formatNumber(contact.totalSpent)}
-                    </td>
-                    <td className="p-4 text-muted-foreground font-mono">
-                      {formatJalaliDate(contact.createdAt, "short")}
-                    </td>
-                    <td className="p-4">
-                      <div className="flex flex-wrap gap-1">
-                        {contact.tags.map((tg) => (
-                          <span
-                            key={tg}
-                            className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-primary/10 text-primary border border-primary/20"
-                          >
-                            {tg}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="p-4 text-center">
-                      <div className="flex items-center justify-center gap-2">
+                filteredContacts.map((contact) => {
+                  const isSelected = selectedIds.includes(contact.id);
+                  return (
+                    <tr
+                      key={contact.id}
+                      className={`hover:bg-muted/30 transition-colors ${isSelected ? "bg-primary/5" : ""}`}
+                    >
+                      {canAssign && (
+                        <td className="p-4 text-center">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleSelectRow(contact.id)}
+                            aria-label={`انتخاب ${contact.fullName}`}
+                            className="rounded border-border accent-primary cursor-pointer"
+                          />
+                        </td>
+                      )}
+                      <td className="p-4">
                         <Link
                           href={`/contacts/${contact.id}`}
-                          className="p-1.5 rounded-lg border border-border hover:bg-muted text-muted-foreground hover:text-primary transition-colors"
-                          title="پروفایل مشتری ۳۶۰ درجه"
+                          className="font-bold text-foreground hover:text-primary transition-colors flex items-center gap-2"
                         >
-                          <Eye className="w-4 h-4" />
+                          <div className="w-8 h-8 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center shrink-0">
+                            {contact.fullName[0]}
+                          </div>
+                          <div>
+                            <div>{contact.fullName}</div>
+                            <div className="text-[10px] text-muted-foreground">{contact.email || "-"}</div>
+                          </div>
                         </Link>
-                        <button
-                          onClick={() => handleDeleteContact(contact.id)}
-                          className="p-1.5 rounded-lg border border-border hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
-                          title="حذف"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                      </td>
+                      <td className="p-4 font-medium text-foreground">{contact.company || "-"}</td>
+                      <td className="p-4 font-mono text-muted-foreground">{contact.phone || "-"}</td>
+                      <td className="p-4 text-muted-foreground">{contact.city || "-"}</td>
+                      <td className="p-4 font-bold font-mono text-foreground">
+                        {formatNumber(contact.totalSpent)}
+                      </td>
+                      <td className="p-4 text-muted-foreground">
+                        {canAssign ? (
+                          <OwnerSelect
+                            users={assignableUsers}
+                            value={contact.ownerId}
+                            onChange={(ownerId) => handleAssignOwner(contact.id, ownerId)}
+                            compact
+                            disabled={assigningId === contact.id}
+                          />
+                        ) : (
+                          <span>{contact.ownerName || "تخصیص‌نیافته"}</span>
+                        )}
+                      </td>
+                      <td className="p-4 text-muted-foreground font-mono">
+                        {formatJalaliDate(contact.createdAt, "short")}
+                      </td>
+                      <td className="p-4">
+                        <div className="flex flex-wrap gap-1">
+                          {contact.tags.map((tg) => (
+                            <span
+                              key={tg}
+                              className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-primary/10 text-primary border border-primary/20"
+                            >
+                              {tg}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="p-4 text-center">
+                        <div className="flex items-center justify-center gap-2">
+                          <Link
+                            href={`/contacts/${contact.id}`}
+                            className="p-1.5 rounded-lg border border-border hover:bg-muted text-muted-foreground hover:text-primary transition-colors"
+                            title="پروفایل مشتری ۳۶۰ درجه"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </Link>
+                          <button
+                            onClick={() => handleDeleteContact(contact.id)}
+                            className="p-1.5 rounded-lg border border-border hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                            title="حذف"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -352,6 +558,17 @@ export default function ContactsClient({
                   />
                 </div>
               </div>
+
+              {canAssign && (
+                <div>
+                  <label className="block font-semibold mb-1">کارشناس مسئول</label>
+                  <OwnerSelect
+                    users={assignableUsers}
+                    value={newContact.ownerId}
+                    onChange={(ownerId) => setNewContact({ ...newContact, ownerId })}
+                  />
+                </div>
+              )}
 
               <div>
                 <label className="block font-semibold mb-1">برچسب‌ها (با کاما جدا کنید)</label>

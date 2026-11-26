@@ -16,6 +16,7 @@ import {
   createContactSchema,
   updateContactSchema,
   assignOwnerSchema,
+  assignManySchema,
   changeLeadStatusSchema,
   changePrioritySchema,
   addNoteSchema,
@@ -31,10 +32,22 @@ export async function createContactAction(rawInput: unknown) {
   const currentUser = await requireUser();
   const data = parsed.data;
 
-  // SALES can only create contacts owned by themselves
-  let ownerId = currentUser.id;
+  // SALES can only create contacts owned by themselves; ignore any ownerId sent by SALES
+  let ownerId: string | null = currentUser.id;
+  let ownerName: string | null = currentUser.name;
+
   if (currentUser.role !== "SALES" && data.ownerId !== undefined) {
-    ownerId = data.ownerId || currentUser.id;
+    if (data.ownerId) {
+      const targetUser = await db.user.findUnique({ where: { id: data.ownerId } });
+      if (!targetUser || !targetUser.isActive) {
+        return { ok: false, error: "کارشناس انتخاب‌شده معتبر نیست" };
+      }
+      ownerId = targetUser.id;
+      ownerName = targetUser.name;
+    } else {
+      ownerId = null;
+      ownerName = null;
+    }
   }
 
   try {
@@ -67,12 +80,12 @@ export async function createContactAction(rawInput: unknown) {
       },
     });
 
-    await recalculateAndSaveContactScore(contact.id);
+    const score = await recalculateAndSaveContactScore(contact.id);
 
     safeRevalidatePath("/contacts");
     safeRevalidatePath("/leads");
 
-    return { ok: true, data: { id: contact.id } };
+    return { ok: true, data: { id: contact.id, ownerId, ownerName, score } };
   } catch (err) {
     console.error("[createContactAction error]", err);
     return { ok: false, error: "خطا در ثبت مخاطب در پایگاه داده" };
@@ -180,18 +193,23 @@ export async function assignOwnerAction(rawInput: unknown) {
   const { contactId, ownerId } = parsed.data;
 
   try {
-    const contact = await db.contact.findUnique({ where: { id: contactId } });
+    const contact = await db.contact.findUnique({
+      where: { id: contactId },
+      include: { owner: { select: { name: true } } },
+    });
     if (!contact || !contact.isActive) {
       return { ok: false, error: "مخاطب یافت نشد" };
     }
 
-    let ownerName = "تخصیص‌نیافته";
+    const fromName = contact.owner?.name || "تخصیص‌نیافته";
+    let toName = "تخصیص‌نیافته";
+
     if (ownerId) {
       const targetUser = await db.user.findUnique({ where: { id: ownerId } });
       if (!targetUser || !targetUser.isActive) {
         return { ok: false, error: "کارشناس انتخاب‌شده معتبر نیست" };
       }
-      ownerName = targetUser.name;
+      toName = targetUser.name;
     }
 
     await db.contact.update({
@@ -202,7 +220,13 @@ export async function assignOwnerAction(rawInput: unknown) {
     await db.activity.create({
       data: {
         type: "ASSIGNMENT",
-        body: `مالکیت مخاطب به ${ownerName} واگذار شد`,
+        body: `مالکیت مخاطب از «${fromName}» به «${toName}» تغییر یافت`,
+        meta: {
+          fromOwnerId: contact.ownerId,
+          fromOwnerName: fromName,
+          toOwnerId: ownerId,
+          toOwnerName: toName,
+        },
         contactId,
         userId: currentUser.id,
       },
@@ -214,10 +238,93 @@ export async function assignOwnerAction(rawInput: unknown) {
     safeRevalidatePath("/leads");
     safeRevalidatePath(`/contacts/${contactId}`);
 
-    return { ok: true };
+    return { ok: true, data: { ownerId, ownerName: ownerId ? toName : null } };
   } catch (err) {
     console.error("[assignOwnerAction error]", err);
     return { ok: false, error: "خطا در تخصیص کارشناس" };
+  }
+}
+
+export async function assignManyAction(rawInput: unknown) {
+  const parsed = assignManySchema.safeParse(rawInput);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.errors[0]?.message || "داده‌های ورودی نامعتبر است" };
+  }
+
+  // Only MANAGER and ADMIN can bulk-assign owners
+  const currentUser = await requireRole("ADMIN", "MANAGER");
+  const { contactIds, ownerId } = parsed.data;
+
+  try {
+    let toName = "تخصیص‌نیافته";
+    if (ownerId) {
+      const targetUser = await db.user.findUnique({ where: { id: ownerId } });
+      if (!targetUser || !targetUser.isActive) {
+        return { ok: false, error: "کارشناس انتخاب‌شده معتبر نیست" };
+      }
+      toName = targetUser.name;
+    }
+
+    const updatedContacts = await db.$transaction(async (tx) => {
+      const contacts = await tx.contact.findMany({
+        where: { id: { in: contactIds }, isActive: true },
+        include: { owner: { select: { name: true } } },
+      });
+
+      if (contacts.length === 0) {
+        return [];
+      }
+
+      const ids = contacts.map((c) => c.id);
+      await tx.contact.updateMany({
+        where: { id: { in: ids } },
+        data: { ownerId },
+      });
+
+      await tx.activity.createMany({
+        data: contacts.map((c) => {
+          const fromName = c.owner?.name || "تخصیص‌نیافته";
+          return {
+            type: "ASSIGNMENT",
+            body: `مالکیت مخاطب از «${fromName}» به «${toName}» تغییر یافت`,
+            meta: {
+              fromOwnerId: c.ownerId,
+              fromOwnerName: fromName,
+              toOwnerId: ownerId,
+              toOwnerName: toName,
+            },
+            contactId: c.id,
+            userId: currentUser.id,
+          };
+        }),
+      });
+
+      return contacts;
+    });
+
+    if (updatedContacts.length === 0) {
+      return { ok: false, error: "مخاطب فعالی برای تخصیص یافت نشد" };
+    }
+
+    await Promise.all(updatedContacts.map((c) => recalculateAndSaveContactScore(c.id)));
+
+    safeRevalidatePath("/contacts");
+    safeRevalidatePath("/leads");
+    for (const c of updatedContacts) {
+      safeRevalidatePath(`/contacts/${c.id}`);
+    }
+
+    return {
+      ok: true,
+      data: {
+        count: updatedContacts.length,
+        ownerId,
+        ownerName: ownerId ? toName : null,
+      },
+    };
+  } catch (err) {
+    console.error("[assignManyAction error]", err);
+    return { ok: false, error: "خطا در تخصیص گروهی کارشناس" };
   }
 }
 

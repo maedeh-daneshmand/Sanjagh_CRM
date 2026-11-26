@@ -1,7 +1,32 @@
-import { ContactKind, LeadStatus, Priority, Source, Prisma } from "@prisma/client";
+import { ContactKind, LeadStatus, Priority, Source, Prisma, Role } from "@prisma/client";
 import { db } from "./db";
-import { requireUser } from "./auth";
+import { requireUser, requireRole } from "./auth";
 import { calculateLeadScore } from "@/lib/lead-score";
+
+export interface AssignableUser {
+  id: string;
+  name: string;
+  phone: string;
+  role: Role;
+}
+
+export async function listAssignableUsers(): Promise<AssignableUser[]> {
+  await requireRole("ADMIN", "MANAGER");
+
+  return db.user.findMany({
+    where: {
+      isActive: true,
+      role: { in: [Role.SALES, Role.MANAGER] },
+    },
+    orderBy: [{ role: "asc" }, { name: "asc" }],
+    select: {
+      id: true,
+      name: true,
+      phone: true,
+      role: true,
+    },
+  });
+}
 
 export interface ListContactsParams {
   kind: ContactKind;

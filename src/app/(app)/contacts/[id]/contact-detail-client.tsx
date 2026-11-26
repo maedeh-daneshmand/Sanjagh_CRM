@@ -4,12 +4,15 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { formatNumber } from "@/lib/utils";
 import { formatJalaliDate } from "@/lib/jalali";
-import { ContactDetailData } from "@/server/contacts";
+import { ContactDetailData, AssignableUser } from "@/server/contacts";
 import {
   addNoteAction,
   convertLeadToCustomerAction,
   logActivityAction,
+  assignOwnerAction,
 } from "@/server/actions/contacts";
+import { useUser } from "@/components/auth/user-context";
+import { OwnerSelect } from "@/components/contacts/owner-select";
 import {
   Building,
   Phone,
@@ -26,21 +29,28 @@ import {
   FileText,
   Flame,
   ArrowRightLeft,
+  UserCheck,
   Check,
   X,
 } from "lucide-react";
 
 export default function ContactDetailClient({
   initialContact,
+  assignableUsers,
 }: {
   initialContact: ContactDetailData;
+  assignableUsers: AssignableUser[];
 }) {
+  const { user } = useUser();
+  const canAssign = user.role === "ADMIN" || user.role === "MANAGER";
+
   const [activeTab, setActiveTab] = useState<"timeline" | "deals" | "tasks">("timeline");
   const [contact, setContact] = useState<ContactDetailData>(initialContact);
   const [activities, setActivities] = useState(initialContact.activities);
   const [newNote, setNewNote] = useState("");
   const [activityType, setActivityType] = useState<"NOTE" | "CALL" | "MEETING">("NOTE");
   const [isSubmittingNote, setIsSubmittingNote] = useState(false);
+  const [isAssigning, setIsAssigning] = useState(false);
 
   // AI Feature 1: Summary & Next Step
   const [aiSummary, setAiSummary] = useState<{ summary: string; risk: string | null; nextStep: string | null } | null>(
@@ -116,6 +126,42 @@ export default function ContactDetailClient({
         meta: null,
         createdAt: new Date().toISOString(),
         userName: "سیستم",
+      },
+      ...activities,
+    ]);
+  };
+
+  const handleAssignOwner = async (newOwnerId: string | null) => {
+    setIsAssigning(true);
+    const res = await assignOwnerAction({ contactId: contact.id, ownerId: newOwnerId });
+    setIsAssigning(false);
+
+    if (!res.ok) {
+      alert(res.error || "خطا در تخصیص کارشناس");
+      return;
+    }
+
+    const fromName = contact.owner?.name || contact.ownerName || "تخصیص‌نیافته";
+    const toName = res.data?.ownerName || "تخصیص‌نیافته";
+    const assignedUser = assignableUsers.find((u) => u.id === newOwnerId) || null;
+
+    setContact({
+      ...contact,
+      ownerId: newOwnerId,
+      ownerName: res.data?.ownerName ?? null,
+      owner: assignedUser
+        ? { id: assignedUser.id, name: assignedUser.name, phone: assignedUser.phone }
+        : null,
+    });
+
+    setActivities([
+      {
+        id: `act_${Date.now()}`,
+        type: "ASSIGNMENT",
+        body: `مالکیت مخاطب از «${fromName}» به «${toName}» تغییر یافت`,
+        meta: null,
+        createdAt: new Date().toISOString(),
+        userName: user.name,
       },
       ...activities,
     ]);
@@ -281,9 +327,21 @@ export default function ContactDetailClient({
                 <span className="px-2 py-0.5 rounded bg-muted text-foreground">{contact.source}</span>
               </div>
 
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">کارشناس مسئول</span>
-                <span className="font-semibold text-foreground">{contact.owner?.name || "تخصیص‌نیافته"}</span>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground shrink-0">کارشناس مسئول</span>
+                {canAssign ? (
+                  <OwnerSelect
+                    users={assignableUsers}
+                    value={contact.ownerId}
+                    onChange={handleAssignOwner}
+                    compact
+                    disabled={isAssigning}
+                  />
+                ) : (
+                  <span className="font-semibold text-foreground">
+                    {contact.owner?.name || contact.ownerName || "تخصیص‌نیافته"}
+                  </span>
+                )}
               </div>
 
               <div className="flex items-center justify-between pt-2 border-t border-border">
@@ -502,6 +560,8 @@ export default function ContactDetailClient({
                           <Video className="w-4 h-4" />
                         ) : act.type === "MESSAGE" ? (
                           <MessageSquare className="w-4 h-4" />
+                        ) : act.type === "ASSIGNMENT" ? (
+                          <UserCheck className="w-4 h-4" />
                         ) : (
                           <FileText className="w-4 h-4" />
                         )}
@@ -517,6 +577,8 @@ export default function ContactDetailClient({
                               ? "تبدیل به مشتری"
                               : act.type === "STATUS_CHANGE"
                               ? "تغییر وضعیت"
+                              : act.type === "ASSIGNMENT"
+                              ? "تخصیص کارشناس"
                               : "یادداشت"}
                           </span>
                           <span className="text-[10px] text-muted-foreground font-mono">

@@ -38,6 +38,11 @@ export const assignOwnerSchema = z.object({
   ownerId: z.string().nullable(),
 });
 
+export const assignManySchema = z.object({
+  contactIds: z.array(z.string().min(1)).min(1, "حداقل یک مخاطب باید انتخاب شود"),
+  ownerId: z.string().nullable(),
+});
+
 export const changeLeadStatusSchema = z.object({
   contactId: z.string().min(1, "شناسه مخاطب الزامی است"),
   status: z.nativeEnum(LeadStatus),

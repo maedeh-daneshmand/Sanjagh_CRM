@@ -2,12 +2,16 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { SerializableContact } from "@/server/contacts";
+import { SerializableContact, AssignableUser } from "@/server/contacts";
 import {
   createContactAction,
   deleteContactAction,
   convertLeadToCustomerAction,
+  assignOwnerAction,
+  assignManyAction,
 } from "@/server/actions/contacts";
+import { useUser } from "@/components/auth/user-context";
+import { OwnerSelect } from "@/components/contacts/owner-select";
 import { Source, Priority, ContactKind, LeadStatus } from "@prisma/client";
 import { formatJalaliDate } from "@/lib/jalali";
 import {
@@ -23,24 +27,52 @@ import {
 
 export default function LeadsClient({
   initialLeads,
+  assignableUsers,
 }: {
   initialLeads: SerializableContact[];
+  assignableUsers: AssignableUser[];
 }) {
+  const { user } = useUser();
+  const canAssign = user.role === "ADMIN" || user.role === "MANAGER";
+
+  const defaultOwnerId = canAssign
+    ? assignableUsers.some((u) => u.id === user.id)
+      ? user.id
+      : null
+    : user.id;
+
   const [leads, setLeads] = useState<SerializableContact[]>(initialLeads);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [showAddModal, setShowAddModal] = useState(false);
-  const [conversionMessage, setConversionMessage] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [assigningId, setAssigningId] = useState<string | null>(null);
 
-  const [newLead, setNewLead] = useState({
+  // Bulk assign state
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkOwnerId, setBulkOwnerId] = useState<string | null>(
+    assignableUsers[0]?.id ?? null
+  );
+  const [isBulkAssigning, setIsBulkAssigning] = useState(false);
+
+  const [newLead, setNewLead] = useState<{
+    fullName: string;
+    company: string;
+    phone: string;
+    email: string;
+    source: Source;
+    priority: Priority;
+    ownerId: string | null;
+  }>({
     fullName: "",
     company: "",
     phone: "",
     email: "",
-    source: "WEBSITE" as Source,
-    priority: "HIGH" as Priority,
+    source: "WEBSITE",
+    priority: "HIGH",
+    ownerId: defaultOwnerId,
   });
 
   const filteredLeads = leads.filter((l) => {
@@ -54,6 +86,31 @@ export default function LeadsClient({
     return matchesSearch && matchesStatus;
   });
 
+  const allFilteredSelected =
+    filteredLeads.length > 0 &&
+    filteredLeads.every((l) => selectedIds.includes(l.id));
+
+  const toggleSelectAll = () => {
+    if (allFilteredSelected) {
+      const filteredSet = new Set(filteredLeads.map((l) => l.id));
+      setSelectedIds(selectedIds.filter((id) => !filteredSet.has(id)));
+    } else {
+      const merged = new Set([...selectedIds, ...filteredLeads.map((l) => l.id)]);
+      setSelectedIds(Array.from(merged));
+    }
+  };
+
+  const toggleSelectRow = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const showToast = (msg: string) => {
+    setStatusMessage(msg);
+    setTimeout(() => setStatusMessage(null), 4000);
+  };
+
   const handleConvertLead = async (id: string, name: string) => {
     const res = await convertLeadToCustomerAction(id);
     if (!res.ok) {
@@ -62,8 +119,8 @@ export default function LeadsClient({
     }
 
     setLeads(leads.filter((l) => l.id !== id));
-    setConversionMessage(`سرنخ «${name}» با موفقیت به مشتری دائم تبدیل شد و به بخش مشتریان انتقال یافت.`);
-    setTimeout(() => setConversionMessage(null), 4000);
+    setSelectedIds((prev) => prev.filter((item) => item !== id));
+    showToast(`سرنخ «${name}» با موفقیت به مشتری دائم تبدیل شد و به بخش مشتریان انتقال یافت.`);
   };
 
   const handleDeleteLead = async (id: string) => {
@@ -71,9 +128,67 @@ export default function LeadsClient({
     const res = await deleteContactAction(id);
     if (res.ok) {
       setLeads(leads.filter((l) => l.id !== id));
+      setSelectedIds((prev) => prev.filter((item) => item !== id));
     } else {
       alert(res.error || "خطا در حذف سرنخ");
     }
+  };
+
+  const handleAssignOwner = async (contactId: string, newOwnerId: string | null) => {
+    setAssigningId(contactId);
+    const res = await assignOwnerAction({ contactId, ownerId: newOwnerId });
+    setAssigningId(null);
+
+    if (!res.ok) {
+      alert(res.error || "خطا در تخصیص کارشناس");
+      return;
+    }
+
+    const updatedOwnerName = res.data?.ownerName ?? null;
+    setLeads((prev) =>
+      prev.map((l) =>
+        l.id === contactId
+          ? { ...l, ownerId: newOwnerId, ownerName: updatedOwnerName }
+          : l
+      )
+    );
+    showToast(
+      updatedOwnerName
+        ? `سرنخ با موفقیت به «${updatedOwnerName}» تخصیص داده شد.`
+        : "تخصیص سرنخ برداشته شد."
+    );
+  };
+
+  const handleBulkAssign = async () => {
+    if (selectedIds.length === 0) return;
+    setIsBulkAssigning(true);
+    const res = await assignManyAction({
+      contactIds: selectedIds,
+      ownerId: bulkOwnerId,
+    });
+    setIsBulkAssigning(false);
+
+    if (!res.ok) {
+      alert(res.error || "خطا در تخصیص گروهی");
+      return;
+    }
+
+    const updatedOwnerName = res.data?.ownerName ?? null;
+    const selectedSet = new Set(selectedIds);
+    setLeads((prev) =>
+      prev.map((l) =>
+        selectedSet.has(l.id)
+          ? { ...l, ownerId: bulkOwnerId, ownerName: updatedOwnerName }
+          : l
+      )
+    );
+    const count = res.data?.count ?? selectedIds.length;
+    setSelectedIds([]);
+    showToast(
+      updatedOwnerName
+        ? `${count} سرنخ با موفقیت به «${updatedOwnerName}» تخصیص داده شد.`
+        : `تخصیص ${count} سرنخ برداشته شد.`
+    );
   };
 
   const handleAddLead = async (e: React.FormEvent) => {
@@ -92,6 +207,7 @@ export default function LeadsClient({
       priority: newLead.priority,
       kind: ContactKind.LEAD,
       leadStatus: LeadStatus.NEW,
+      ...(canAssign ? { ownerId: newLead.ownerId } : {}),
     });
 
     setIsSubmitting(false);
@@ -114,12 +230,12 @@ export default function LeadsClient({
         sourceNote: null,
         leadStatus: LeadStatus.NEW,
         priority: newLead.priority,
-        score: 60,
+        score: res.data.score ?? 60,
         tags: [],
         notes: null,
-        ownerId: null,
-        ownerName: null,
-        createdById: "",
+        ownerId: res.data.ownerId ?? null,
+        ownerName: res.data.ownerName ?? null,
+        createdById: user.id,
         convertedAt: null,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -137,6 +253,7 @@ export default function LeadsClient({
       email: "",
       source: "WEBSITE",
       priority: "HIGH",
+      ownerId: defaultOwnerId,
     });
   };
 
@@ -162,10 +279,10 @@ export default function LeadsClient({
         </button>
       </div>
 
-      {conversionMessage && (
+      {statusMessage && (
         <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 text-xs font-bold flex items-center gap-2 transition-all">
           <CheckCircle2 className="w-4 h-4" />
-          <span>{conversionMessage}</span>
+          <span>{statusMessage}</span>
         </div>
       )}
 
@@ -206,12 +323,56 @@ export default function LeadsClient({
         </div>
       </div>
 
+      {/* Bulk Assign Toolbar for MANAGER / ADMIN */}
+      {canAssign && selectedIds.length > 0 && (
+        <div className="p-3.5 rounded-2xl bg-primary/5 border border-primary/20 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2 font-bold text-primary">
+            <span>{selectedIds.length} سرنخ انتخاب شده</span>
+            <button
+              type="button"
+              onClick={() => setSelectedIds([])}
+              className="text-[11px] font-medium text-muted-foreground hover:text-foreground underline"
+            >
+              لغو انتخاب
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <OwnerSelect
+              users={assignableUsers}
+              value={bulkOwnerId}
+              onChange={setBulkOwnerId}
+              compact
+              disabled={isBulkAssigning}
+            />
+            <button
+              type="button"
+              onClick={handleBulkAssign}
+              disabled={isBulkAssigning}
+              className="px-3.5 py-1.5 rounded-xl bg-primary text-primary-foreground font-bold shadow-sm hover:opacity-90 disabled:opacity-50 transition-all"
+            >
+              {isBulkAssigning ? "در حال تخصیص..." : "تخصیص به کارشناس"}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Leads Table */}
       <div className="rounded-2xl bg-card border border-border shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-right text-xs">
             <thead>
               <tr className="border-b border-border bg-muted/30 text-muted-foreground">
+                {canAssign && (
+                  <th className="p-4 w-10 text-center">
+                    <input
+                      type="checkbox"
+                      checked={allFilteredSelected}
+                      onChange={toggleSelectAll}
+                      aria-label="انتخاب همه"
+                      className="rounded border-border accent-primary cursor-pointer"
+                    />
+                  </th>
+                )}
                 <th className="p-4 font-bold">نام سرنخ</th>
                 <th className="p-4 font-bold">شرکت / صنف</th>
                 <th className="p-4 font-bold">شماره تماس</th>
@@ -226,15 +387,30 @@ export default function LeadsClient({
             <tbody className="divide-y divide-border">
               {filteredLeads.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="text-center py-12 text-muted-foreground">
+                  <td colSpan={canAssign ? 10 : 9} className="text-center py-12 text-muted-foreground">
                     هیچ سرنخی با این فیلتر پیدا نشد.
                   </td>
                 </tr>
               ) : (
                 filteredLeads.map((lead) => {
                   const isHot = lead.score >= 80;
+                  const isSelected = selectedIds.includes(lead.id);
                   return (
-                    <tr key={lead.id} className="hover:bg-muted/30 transition-colors">
+                    <tr
+                      key={lead.id}
+                      className={`hover:bg-muted/30 transition-colors ${isSelected ? "bg-primary/5" : ""}`}
+                    >
+                      {canAssign && (
+                        <td className="p-4 text-center">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleSelectRow(lead.id)}
+                            aria-label={`انتخاب ${lead.fullName}`}
+                            className="rounded border-border accent-primary cursor-pointer"
+                          />
+                        </td>
+                      )}
                       <td className="p-4 font-bold text-foreground">
                         <Link href={`/contacts/${lead.id}`} className="hover:text-primary transition-colors">
                           {lead.fullName}
@@ -276,7 +452,19 @@ export default function LeadsClient({
                           </span>
                         </div>
                       </td>
-                      <td className="p-4 text-muted-foreground">{lead.ownerName || "تخصیص‌نیافته"}</td>
+                      <td className="p-4 text-muted-foreground">
+                        {canAssign ? (
+                          <OwnerSelect
+                            users={assignableUsers}
+                            value={lead.ownerId}
+                            onChange={(ownerId) => handleAssignOwner(lead.id, ownerId)}
+                            compact
+                            disabled={assigningId === lead.id}
+                          />
+                        ) : (
+                          <span>{lead.ownerName || "تخصیص‌نیافته"}</span>
+                        )}
+                      </td>
                       <td className="p-4 text-muted-foreground font-mono">
                         {formatJalaliDate(lead.createdAt, "short")}
                       </td>
@@ -394,6 +582,17 @@ export default function LeadsClient({
                   </select>
                 </div>
               </div>
+
+              {canAssign && (
+                <div>
+                  <label className="block font-semibold mb-1">کارشناس مسئول</label>
+                  <OwnerSelect
+                    users={assignableUsers}
+                    value={newLead.ownerId}
+                    onChange={(ownerId) => setNewLead({ ...newLead, ownerId })}
+                  />
+                </div>
+              )}
 
               <div className="flex justify-end gap-2 pt-3 border-t border-border">
                 <button

@@ -1,12 +1,17 @@
 import React from "react";
 import { ContactKind } from "@prisma/client";
-import { listContacts } from "@/server/contacts";
+import { requireUser } from "@/server/auth";
+import { listContacts, listAssignableUsers } from "@/server/contacts";
 import ContactsClient from "./contacts-client";
 
 export default async function ContactsPage() {
-  const { items } = await listContacts({
-    kind: ContactKind.CUSTOMER,
-  });
+  const currentUser = await requireUser();
+  const canAssign = currentUser.role === "ADMIN" || currentUser.role === "MANAGER";
 
-  return <ContactsClient initialContacts={items} />;
+  const [{ items }, assignableUsers] = await Promise.all([
+    listContacts({ kind: ContactKind.CUSTOMER }),
+    canAssign ? listAssignableUsers() : Promise.resolve([]),
+  ]);
+
+  return <ContactsClient initialContacts={items} assignableUsers={assignableUsers} />;
 }
