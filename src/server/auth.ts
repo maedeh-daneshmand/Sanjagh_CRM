@@ -6,7 +6,7 @@ import { SignJWT, jwtVerify } from "jose";
 import { Role, User } from "@prisma/client";
 import { db } from "./db";
 import { redis } from "./redis";
-import { sendMessage } from "./messaging";
+import { enqueueMessageJob } from "./queue/queues";
 
 export const SESSION_COOKIE = "sanjagh_session";
 
@@ -116,12 +116,23 @@ export async function requestOtp(
       const record: OtpRecord = { hash, attempts: 0 };
       await redis.set(`otp:${phone}`, JSON.stringify(record), "EX", 120);
 
-      // Send OTP via messaging provider
-      await sendMessage({
-        to: phone,
-        body: `کد ورود به سنجاق: ${code}`,
-        token: code,
+      // Create Message row (QUEUED) and enqueue top-priority OTP job
+      const otpMessage = await db.message.create({
+        data: {
+          channel: "SMS",
+          toAddress: phone,
+          body: `کد ورود به سنجاق: ${code}`,
+          status: "QUEUED",
+          sentById: user.id,
+        },
+        select: { id: true },
+      });
+
+      await enqueueMessageJob({
+        messageId: otpMessage.id,
+        isOtp: true,
         template: process.env.KAVENEGAR_OTP_TEMPLATE,
+        token: code,
       });
     }
 

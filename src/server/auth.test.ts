@@ -33,11 +33,14 @@ vi.mock("./db", () => ({
       delete: vi.fn(),
       findUnique: vi.fn(),
     },
+    message: {
+      create: vi.fn().mockResolvedValue({ id: "otp-msg-1" }),
+    },
   },
 }));
 
-vi.mock("./messaging", () => ({
-  sendMessage: vi.fn().mockResolvedValue({ ok: true, messageId: "mock-msg-123" }),
+vi.mock("./queue/queues", () => ({
+  enqueueMessageJob: vi.fn().mockResolvedValue(undefined),
 }));
 
 describe("Auth Core & Security Rules", () => {

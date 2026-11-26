@@ -59,21 +59,22 @@ export async function middleware(request: NextRequest) {
   // 5. Role-based Route Blocking:
   const role = userPayload?.role;
 
-  // SALES cannot access /team, /campaigns, /automations, /users
+  // SALES cannot access /team, /campaigns, /automations, /users, /admin
   if (role === "SALES") {
     if (
       pathname.startsWith("/team") ||
       pathname.startsWith("/campaigns") ||
       pathname.startsWith("/automations") ||
-      pathname.startsWith("/users")
+      pathname.startsWith("/users") ||
+      pathname.startsWith("/admin")
     ) {
       return NextResponse.redirect(new URL("/", request.url));
     }
   }
 
-  // MANAGER cannot access /users
+  // MANAGER cannot access /users or /admin
   if (role === "MANAGER") {
-    if (pathname.startsWith("/users")) {
+    if (pathname.startsWith("/users") || pathname.startsWith("/admin")) {
       return NextResponse.redirect(new URL("/", request.url));
     }
   }

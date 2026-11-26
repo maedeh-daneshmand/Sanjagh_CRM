@@ -136,6 +136,12 @@ export function AppSidebar({ overdueTasksCount = 0 }: { overdueTasksCount?: numb
           roles: ["ADMIN"],
         },
         {
+          name: "صف‌ها و پیام‌ها",
+          href: "/admin/queues",
+          icon: Workflow,
+          roles: ["ADMIN"],
+        },
+        {
           name: "تنظیمات سامانه",
           href: "/settings",
           icon: Settings,

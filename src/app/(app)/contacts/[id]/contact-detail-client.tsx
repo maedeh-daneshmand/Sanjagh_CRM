@@ -11,6 +11,8 @@ import {
   logActivityAction,
   assignOwnerAction,
 } from "@/server/actions/contacts";
+import { sendSingleMessageAction } from "@/server/actions/messages";
+import { Channel } from "@prisma/client";
 import { useUser } from "@/components/auth/user-context";
 import { OwnerSelect } from "@/components/contacts/owner-select";
 import {
@@ -44,9 +46,14 @@ export default function ContactDetailClient({
   const { user } = useUser();
   const canAssign = user.role === "ADMIN" || user.role === "MANAGER";
 
-  const [activeTab, setActiveTab] = useState<"timeline" | "deals" | "tasks">("timeline");
+  const [activeTab, setActiveTab] = useState<"timeline" | "deals" | "tasks" | "messages">("timeline");
   const [contact, setContact] = useState<ContactDetailData>(initialContact);
   const [activities, setActivities] = useState(initialContact.activities);
+  const [messages, setMessages] = useState(initialContact.messages);
+  const [msgChannel, setMsgChannel] = useState<Channel>(Channel.SMS);
+  const [msgSubject, setMsgSubject] = useState("");
+  const [msgBody, setMsgBody] = useState("");
+  const [sendingMsg, setSendingMsg] = useState(false);
   const [newNote, setNewNote] = useState("");
   const [activityType, setActivityType] = useState<"NOTE" | "CALL" | "MEETING">("NOTE");
   const [isSubmittingNote, setIsSubmittingNote] = useState(false);
@@ -479,6 +486,16 @@ export default function ContactDetailClient({
             >
               وظایف و پیگیری‌ها ({contact.tasks.length})
             </button>
+            <button
+              onClick={() => setActiveTab("messages")}
+              className={`flex-1 py-2 rounded-xl transition-all ${
+                activeTab === "messages"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              پیام‌ها ({messages.length})
+            </button>
           </div>
 
           {/* Timeline Tab */}
@@ -668,6 +685,121 @@ export default function ContactDetailClient({
                   </div>
                 ))
               )}
+            </div>
+          )}
+
+          {/* Messages Tab */}
+          {activeTab === "messages" && (
+            <div className="space-y-4">
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!msgBody.trim()) return;
+                  setSendingMsg(true);
+                  const res = await sendSingleMessageAction({
+                    contactId: contact.id,
+                    channel: msgChannel,
+                    subject: msgSubject || null,
+                    body: msgBody.trim(),
+                  });
+                  setSendingMsg(false);
+                  if (!res.ok || !res.data) {
+                    alert(res.error || "خطا در ارسال پیام");
+                    return;
+                  }
+                  setMessages([res.data, ...messages]);
+                  setMsgBody("");
+                  setMsgSubject("");
+                }}
+                className="p-4 rounded-2xl bg-card border border-border shadow-sm space-y-3 text-xs"
+              >
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setMsgChannel(Channel.SMS)}
+                    className={`px-3 py-1.5 rounded-xl font-bold ${
+                      msgChannel === Channel.SMS ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                    }`}
+                  >
+                    پیامک (SMS)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMsgChannel(Channel.EMAIL)}
+                    className={`px-3 py-1.5 rounded-xl font-bold ${
+                      msgChannel === Channel.EMAIL ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                    }`}
+                  >
+                    ایمیل (Email)
+                  </button>
+                </div>
+
+                {msgChannel === Channel.EMAIL && (
+                  <input
+                    type="text"
+                    value={msgSubject}
+                    onChange={(e) => setMsgSubject(e.target.value)}
+                    placeholder="عنوان ایمیل..."
+                    className="w-full p-2.5 bg-muted/40 border border-border rounded-xl focus:outline-none focus:border-primary"
+                  />
+                )}
+
+                <textarea
+                  rows={3}
+                  required
+                  value={msgBody}
+                  onChange={(e) => setMsgBody(e.target.value)}
+                  placeholder="متن پیام (می‌توانید از {{fullName}} استفاده کنید)..."
+                  className="w-full p-2.5 bg-muted/40 border border-border rounded-xl focus:outline-none focus:border-primary"
+                />
+
+                <div className="flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={sendingMsg}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-primary-foreground font-bold hover:opacity-90 disabled:opacity-50"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>{sendingMsg ? "در حال صف‌بندی..." : "ارسال در صف BullMQ"}</span>
+                  </button>
+                </div>
+              </form>
+
+              <div className="space-y-2.5">
+                {messages.length === 0 ? (
+                  <div className="text-center py-6 text-xs text-muted-foreground">
+                    هنوز پیامی برای این مخاطب ثبت نشده است.
+                  </div>
+                ) : (
+                  messages.map((m) => (
+                    <div
+                      key={m.id}
+                      className="p-4 rounded-2xl bg-card border border-border shadow-sm flex items-start justify-between gap-3 text-xs"
+                    >
+                      <div className="space-y-1 min-w-0">
+                        <div className="font-bold text-foreground font-mono">
+                          [{m.channel}] {m.toAddress}
+                        </div>
+                        <p className="text-muted-foreground">{m.body}</p>
+                        <div className="text-[10px] text-slate-400 font-mono">
+                          {formatJalaliDate(m.createdAt, "full")}
+                        </div>
+                      </div>
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${
+                          m.status === "SENT"
+                            ? "bg-emerald-500/10 text-emerald-600"
+                            : m.status === "FAILED"
+                            ? "bg-rose-500/10 text-rose-600"
+                            : "bg-amber-500/10 text-amber-600"
+                        }`}
+                      >
+                        {m.status === "SENT" ? "ارسال شد" : m.status === "FAILED" ? "ناموفق" : "در صف"}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           )}
         </div>
