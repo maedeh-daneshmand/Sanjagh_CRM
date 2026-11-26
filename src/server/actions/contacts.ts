@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "../db";
 import { requireUser, requireRole } from "../auth";
 import { recalculateAndSaveContactScore } from "../contacts";
+import { emitEvent } from "../automations/engine";
 
 function safeRevalidatePath(path: string) {
   try {
@@ -81,6 +82,21 @@ export async function createContactAction(rawInput: unknown) {
     });
 
     const score = await recalculateAndSaveContactScore(contact.id);
+
+    try {
+      await emitEvent(
+        contact.kind === "CUSTOMER" ? "CUSTOMER_CREATED" : "LEAD_CREATED",
+        {
+          contactId: contact.id,
+          source: contact.source,
+          priority: contact.priority,
+          leadStatus: contact.leadStatus,
+          kind: contact.kind,
+        }
+      );
+    } catch (autoErr) {
+      console.error("[createContactAction emitEvent error]", autoErr);
+    }
 
     safeRevalidatePath("/contacts");
     safeRevalidatePath("/leads");
@@ -365,6 +381,17 @@ export async function changeLeadStatusAction(rawInput: unknown) {
 
     await recalculateAndSaveContactScore(contactId);
 
+    try {
+      await emitEvent("LEAD_STATUS_CHANGED", {
+        contactId,
+        fromStatus: prevStatus,
+        toStatus: status,
+        leadStatus: status,
+      });
+    } catch (autoErr) {
+      console.error("[changeLeadStatusAction emitEvent error]", autoErr);
+    }
+
     safeRevalidatePath("/leads");
     safeRevalidatePath(`/contacts/${contactId}`);
 
@@ -535,8 +562,19 @@ export async function convertLeadToCustomerAction(contactId: string) {
 
     await recalculateAndSaveContactScore(contactId);
 
+    try {
+      await emitEvent("CUSTOMER_CREATED", {
+        contactId,
+        kind: "CUSTOMER",
+        source: existing.source,
+        priority: existing.priority,
+      });
+    } catch (autoErr) {
+      console.error("[convertLeadToCustomerAction emitEvent error]", autoErr);
+    }
+
     safeRevalidatePath("/leads");
-    revalidatePath("/contacts");
+    safeRevalidatePath("/contacts");
     safeRevalidatePath(`/contacts/${contactId}`);
 
     return { ok: true };

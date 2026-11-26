@@ -4,10 +4,12 @@ import { db } from "../db";
 import { sendMessage } from "../messaging";
 import { getBullConnection } from "./connection";
 import {
+  AutomationStepJobData,
   CampaignDispatchJobData,
   SendMessageJobData,
   enqueueMessageJob,
 } from "./queues";
+import { executeAutomationStep } from "../automations/engine";
 
 export interface AudienceFilter {
   kind?: ContactKind | "ALL";
@@ -225,6 +227,7 @@ export async function processCampaignDispatchJob(data: CampaignDispatchJobData):
 
 const globalForWorker = globalThis as unknown as {
   messagesWorker?: Worker;
+  automationsWorker?: Worker;
   workersStarted?: boolean;
 };
 
@@ -236,7 +239,7 @@ export function startWorkers(): void {
   if (globalForWorker.workersStarted) return;
   globalForWorker.workersStarted = true;
 
-  const worker = new Worker(
+  const messagesWorker = new Worker(
     "messages",
     async (job: Job) => {
       if (job.name === "campaign-dispatch") {
@@ -255,15 +258,32 @@ export function startWorkers(): void {
     }
   );
 
-  worker.on("error", (err) => {
+  messagesWorker.on("error", (err) => {
     console.error("[BullMQ messages worker error]", err);
   });
 
-  globalForWorker.messagesWorker = worker;
+  const automationsWorker = new Worker(
+    "automations",
+    async (job: Job) => {
+      const data = job.data as AutomationStepJobData;
+      await executeAutomationStep(data.runId, data.stepIndex);
+    },
+    {
+      connection: getBullConnection(),
+      concurrency: 5,
+    }
+  );
+
+  automationsWorker.on("error", (err) => {
+    console.error("[BullMQ automations worker error]", err);
+  });
+
+  globalForWorker.messagesWorker = messagesWorker;
+  globalForWorker.automationsWorker = automationsWorker;
 
   const shutdown = async () => {
     try {
-      await worker.close();
+      await Promise.all([messagesWorker.close(), automationsWorker.close()]);
     } catch {
       // Ignore shutdown error
     }
@@ -271,5 +291,5 @@ export function startWorkers(): void {
   process.once("SIGTERM", shutdown);
   process.once("SIGINT", shutdown);
 
-  console.log("[BullMQ] Messages worker started.");
+  console.log("[BullMQ] Messages and Automations workers started.");
 }

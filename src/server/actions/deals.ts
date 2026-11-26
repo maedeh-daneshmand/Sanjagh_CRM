@@ -5,6 +5,7 @@ import { DealStage } from "@prisma/client";
 import { db } from "../db";
 import { requireUser } from "../auth";
 import { recalculateAndSaveContactScore } from "../contacts";
+import { emitEvent } from "../automations/engine";
 import { createDealSchema, moveDealSchema, updateDealSchema } from "@/lib/schemas/deals";
 
 function safeRevalidatePath(path: string) {
@@ -101,6 +102,17 @@ export async function createDealAction(rawInput: unknown) {
 
     await recalculateAndSaveContactScore(contact.id);
 
+    try {
+      await emitEvent("DEAL_STAGE_CHANGED", {
+        contactId: contact.id,
+        dealId: deal.id,
+        toStage: data.stage,
+        stage: data.stage,
+      });
+    } catch (autoErr) {
+      console.error("[createDealAction emitEvent error]", autoErr);
+    }
+
     safeRevalidatePath("/pipeline");
     safeRevalidatePath(`/contacts/${contact.id}`);
     safeRevalidatePath("/");
@@ -195,6 +207,18 @@ export async function moveDealAction(rawInput: unknown) {
       });
 
       await recalculateAndSaveContactScore(existing.contactId);
+
+      try {
+        await emitEvent("DEAL_STAGE_CHANGED", {
+          contactId: existing.contactId,
+          dealId: existing.id,
+          fromStage: existing.stage,
+          toStage,
+          stage: toStage,
+        });
+      } catch (autoErr) {
+        console.error("[moveDealAction emitEvent error]", autoErr);
+      }
     }
 
     safeRevalidatePath("/pipeline");
@@ -284,6 +308,18 @@ export async function updateDealAction(rawInput: unknown) {
           userId: currentUser.id,
         },
       });
+
+      try {
+        await emitEvent("DEAL_STAGE_CHANGED", {
+          contactId: existing.contactId,
+          dealId: existing.id,
+          fromStage: existing.stage,
+          toStage: targetStage,
+          stage: targetStage,
+        });
+      } catch (autoErr) {
+        console.error("[updateDealAction emitEvent error]", autoErr);
+      }
     }
 
     safeRevalidatePath("/pipeline");

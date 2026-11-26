@@ -83,3 +83,22 @@ export async function enqueueCampaignDispatchJob(campaignId: string): Promise<vo
     }
   );
 }
+
+export async function enqueueAutomationStepJob(params: {
+  runId: string;
+  stepIndex: number;
+  delayMs?: number;
+}): Promise<void> {
+  const queue = getAutomationsQueue();
+  await queue.add(
+    "execute-step",
+    {
+      runId: params.runId,
+      stepIndex: params.stepIndex,
+    } satisfies AutomationStepJobData,
+    {
+      jobId: `run-${params.runId}-step-${params.stepIndex}`,
+      delay: params.delayMs && params.delayMs > 0 ? params.delayMs : undefined,
+    }
+  );
+}
