@@ -14,10 +14,13 @@ function createRedisInstance(): Redis {
   }
 
   const client = new Redis(redisUrl, {
-    maxRetriesPerRequest: null,
-    enableReadyCheck: false,
+    connectTimeout: 3000,
+    commandTimeout: 3000,
+    enableOfflineQueue: false,
+    maxRetriesPerRequest: 1,
     retryStrategy(times) {
-      return Math.min(times * 100, 2000);
+      if (times > 3) return null;
+      return Math.min(times * 200, 1000);
     },
   });
 

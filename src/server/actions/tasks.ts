@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { TaskOrigin, TaskStatus } from "@prisma/client";
+import { z } from "zod";
 import { db } from "../db";
 import { requireUser } from "../auth";
 import { createTaskSchema, updateTaskSchema } from "@/lib/schemas/tasks";
@@ -188,11 +189,22 @@ export async function updateTaskAction(rawInput: unknown) {
   }
 }
 
+const taskIdSchema = z.string().min(1, "شناسه وظیفه نامعتبر است");
+const tasksByRangeSchema = z.object({
+  fromIso: z.string().min(1).refine((v) => !Number.isNaN(Date.parse(v)), "تاریخ شروع نامعتبر است"),
+  toIso: z.string().min(1).refine((v) => !Number.isNaN(Date.parse(v))),
+  assigneeFilterId: z.string().min(1).optional(),
+});
+
 export async function toggleTaskDoneAction(taskId: string) {
   const currentUser = await requireUser();
+  const parsedId = taskIdSchema.safeParse(taskId);
+  if (!parsedId.success) {
+    return { ok: false, error: "شناسه وظیفه نامعتبر است" };
+  }
 
   try {
-    const existing = await db.task.findUnique({ where: { id: taskId } });
+    const existing = await db.task.findUnique({ where: { id: parsedId.data } });
     if (!existing) {
       return { ok: false, error: "وظیفه یافت نشد" };
     }
@@ -234,9 +246,13 @@ export async function toggleTaskDoneAction(taskId: string) {
 
 export async function deleteTaskAction(taskId: string) {
   const currentUser = await requireUser();
+  const parsedId = taskIdSchema.safeParse(taskId);
+  if (!parsedId.success) {
+    return { ok: false, error: "شناسه وظیفه نامعتبر است" };
+  }
 
   try {
-    const existing = await db.task.findUnique({ where: { id: taskId } });
+    const existing = await db.task.findUnique({ where: { id: parsedId.data } });
     if (!existing) {
       return { ok: false, error: "وظیفه یافت نشد" };
     }
@@ -267,8 +283,18 @@ export async function getTasksByRangeAction(
   toIso: string,
   assigneeFilterId?: string
 ) {
+  await requireUser();
+  const parsed = tasksByRangeSchema.safeParse({ fromIso, toIso, assigneeFilterId });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.errors[0]?.message || "بازه زمانی نامعتبر است" };
+  }
+
   try {
-    const tasks = await getTasksByRange(fromIso, toIso, assigneeFilterId);
+    const tasks = await getTasksByRange(
+      parsed.data.fromIso,
+      parsed.data.toIso,
+      parsed.data.assigneeFilterId
+    );
     return { ok: true, data: tasks };
   } catch (err) {
     console.error("[getTasksByRangeAction error]", err);

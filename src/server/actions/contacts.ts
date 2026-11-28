@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 import { db } from "../db";
 import { requireUser, requireRole } from "../auth";
 import { recalculateAndSaveContactScore } from "../contacts";
@@ -170,11 +171,17 @@ export async function updateContactAction(rawInput: unknown) {
   }
 }
 
+const contactIdSchema = z.string().min(1, "شناسه مخاطب نامعتبر است");
+
 export async function deleteContactAction(id: string) {
   const currentUser = await requireUser();
+  const parsedId = contactIdSchema.safeParse(id);
+  if (!parsedId.success) {
+    return { ok: false, error: "شناسه مخاطب نامعتبر است" };
+  }
 
   try {
-    const existing = await db.contact.findUnique({ where: { id } });
+    const existing = await db.contact.findUnique({ where: { id: parsedId.data } });
     if (!existing || !existing.isActive) {
       return { ok: false, error: "مخاطب یافت نشد" };
     }
@@ -530,9 +537,13 @@ export async function logActivityAction(rawInput: unknown) {
 
 export async function convertLeadToCustomerAction(contactId: string) {
   const currentUser = await requireUser();
+  const parsedId = contactIdSchema.safeParse(contactId);
+  if (!parsedId.success) {
+    return { ok: false, error: "شناسه سرنخ نامعتبر است" };
+  }
 
   try {
-    const existing = await db.contact.findUnique({ where: { id: contactId } });
+    const existing = await db.contact.findUnique({ where: { id: parsedId.data } });
     if (!existing || !existing.isActive) {
       return { ok: false, error: "سرنخ یافت نشد" };
     }

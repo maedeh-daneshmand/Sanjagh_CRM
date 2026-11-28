@@ -32,6 +32,7 @@ vi.mock("./messaging", () => ({
 describe("BullMQ Queue & Worker - Stage F", () => {
   beforeEach(async () => {
     await redis.flushall();
+    await redis.set("worker:heartbeat", "1", "EX", 30);
     vi.clearAllMocks();
   });
 

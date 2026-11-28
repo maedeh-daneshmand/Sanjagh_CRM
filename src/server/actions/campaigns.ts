@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { CampaignStatus, Channel } from "@prisma/client";
+import { z } from "zod";
 import { db } from "../db";
 import { requireRole } from "../auth";
 import { campaignFilterSchema, createCampaignSchema } from "@/lib/schemas/campaigns";
@@ -20,18 +21,25 @@ function safeRevalidatePath(path: string) {
   }
 }
 
+const channelSchema = z.nativeEnum(Channel);
+const idSchema = z.string().min(1, "شناسه نامعتبر است");
+
 export async function previewCampaignAudienceAction(
   channel: Channel,
   rawFilter: unknown
 ) {
   await requireRole("ADMIN", "MANAGER");
+  const parsedChannel = channelSchema.safeParse(channel);
+  if (!parsedChannel.success) {
+    return { ok: false, error: "کانال ارسال نامعتبر است" };
+  }
   const parsed = campaignFilterSchema.safeParse(rawFilter);
   if (!parsed.success) {
     return { ok: false, error: "فیلتر مخاطبان نامعتبر است" };
   }
 
   try {
-    const count = await countCampaignAudience(channel, parsed.data);
+    const count = await countCampaignAudience(parsedChannel.data, parsed.data);
     return { ok: true, data: { count } };
   } catch (err) {
     console.error("[previewCampaignAudienceAction error]", err);
@@ -95,6 +103,7 @@ export async function createAndSendCampaignAction(rawInput: unknown) {
 }
 
 export async function refreshCampaignsAction() {
+  await requireRole("ADMIN", "MANAGER");
   try {
     const campaigns = await listCampaigns();
     return { ok: true, data: campaigns };
@@ -105,8 +114,13 @@ export async function refreshCampaignsAction() {
 }
 
 export async function getCampaignFailedMessagesAction(campaignId: string) {
+  await requireRole("ADMIN", "MANAGER");
+  const parsedId = idSchema.safeParse(campaignId);
+  if (!parsedId.success) {
+    return { ok: false, error: "شناسه کمپین نامعتبر است" };
+  }
   try {
-    const messages = await getCampaignFailedMessages(campaignId);
+    const messages = await getCampaignFailedMessages(parsedId.data);
     return { ok: true, data: messages };
   } catch (err) {
     console.error("[getCampaignFailedMessagesAction error]", err);

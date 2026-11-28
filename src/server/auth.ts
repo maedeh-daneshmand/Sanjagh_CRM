@@ -7,6 +7,21 @@ import { Role, User } from "@prisma/client";
 import { db } from "./db";
 import { redis } from "./redis";
 import { enqueueMessageJob } from "./queue/queues";
+import { hasActiveWorker } from "./queue/worker";
+
+async function withTimeout<T>(promise: Promise<T>, ms = 4000): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("Service timeout")), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 export const SESSION_COOKIE = "sanjagh_session";
 
@@ -46,8 +61,8 @@ export async function requestOtp(
   }
 
   try {
-    // 1. Check if locked out
-    const isLocked = await redis.get(`lockout:${phone}`);
+    // 1. Check if locked out (read-only)
+    const isLocked = await withTimeout(redis.get(`lockout:${phone}`));
     if (isLocked) {
       return {
         ok: false,
@@ -55,11 +70,19 @@ export async function requestOtp(
       };
     }
 
-    // 2. Rate limiting: 3 per 10 mins per phone
+    // 2. User check BEFORE incrementing rate-limit counters so a DB outage does not burn user quota
+    // Generic response to avoid phone enumeration when user does not exist
+    const user = await withTimeout(
+      db.user.findUnique({
+        where: { phone, isActive: true },
+      })
+    );
+
+    // 3. Rate limiting: 3 per 10 mins per phone
     const phoneLimitKey = `ratelimit:phone:${phone}`;
-    const phoneReqCount = await redis.incr(phoneLimitKey);
+    const phoneReqCount = await withTimeout(redis.incr(phoneLimitKey));
     if (phoneReqCount === 1) {
-      await redis.expire(phoneLimitKey, 600);
+      await withTimeout(redis.expire(phoneLimitKey, 600));
     }
     if (phoneReqCount > 3) {
       return {
@@ -71,9 +94,9 @@ export async function requestOtp(
     // Rate limiting: 3 per 10 mins per IP
     if (clientIp) {
       const ipLimitKey = `ratelimit:ip:${clientIp}`;
-      const ipReqCount = await redis.incr(ipLimitKey);
+      const ipReqCount = await withTimeout(redis.incr(ipLimitKey));
       if (ipReqCount === 1) {
-        await redis.expire(ipLimitKey, 600);
+        await withTimeout(redis.expire(ipLimitKey, 600));
       }
       if (ipReqCount > 3) {
         return {
@@ -82,12 +105,6 @@ export async function requestOtp(
         };
       }
     }
-
-    // 3. User check: Only active users can log in
-    // Generic response to avoid phone enumeration
-    const user = await db.user.findUnique({
-      where: { phone, isActive: true },
-    });
 
     let demoCode: string | undefined;
 
@@ -114,26 +131,42 @@ export async function requestOtp(
 
       // Save in Redis key otp:{phone} with 120s TTL
       const record: OtpRecord = { hash, attempts: 0 };
-      await redis.set(`otp:${phone}`, JSON.stringify(record), "EX", 120);
+      await withTimeout(redis.set(`otp:${phone}`, JSON.stringify(record), "EX", 120));
 
       // Create Message row (QUEUED) and enqueue top-priority OTP job
-      const otpMessage = await db.message.create({
-        data: {
-          channel: "SMS",
-          toAddress: phone,
-          body: `کد ورود به سنجاق: ${code}`,
-          status: "QUEUED",
-          sentById: user.id,
-        },
-        select: { id: true },
-      });
+      const otpMessage = await withTimeout(
+        db.message.create({
+          data: {
+            channel: "SMS",
+            toAddress: phone,
+            body: `کد ورود به سنجاق: ${code}`,
+            status: "QUEUED",
+            sentById: user.id,
+          },
+          select: { id: true },
+        })
+      );
 
-      await enqueueMessageJob({
-        messageId: otpMessage.id,
-        isOtp: true,
-        template: process.env.KAVENEGAR_OTP_TEMPLATE,
-        token: code,
-      });
+      await withTimeout(
+        enqueueMessageJob({
+          messageId: otpMessage.id,
+          isOtp: true,
+          template: process.env.KAVENEGAR_OTP_TEMPLATE,
+          token: code,
+        })
+      );
+
+      // Honesty check: if not in demo mode and no worker is active to deliver the SMS, report it
+      if (!isDemoMode) {
+        const workerActive = await withTimeout(hasActiveWorker());
+        if (!workerActive) {
+          await redis.del(`otp:${phone}`).catch(() => {});
+          return {
+            ok: false,
+            error: "سرویس ارسال پیامک فعال نیست",
+          };
+        }
+      }
     }
 
     return {
@@ -160,7 +193,7 @@ export async function verifyOtp(
 
   try {
     // 1. Check lockout
-    const isLocked = await redis.get(`lockout:${phone}`);
+    const isLocked = await withTimeout(redis.get(`lockout:${phone}`));
     if (isLocked) {
       return {
         ok: false,
@@ -169,7 +202,7 @@ export async function verifyOtp(
     }
 
     // 2. Read OTP from Redis
-    const rawData = await redis.get(`otp:${phone}`);
+    const rawData = await withTimeout(redis.get(`otp:${phone}`));
     if (!rawData) {
       return { ok: false, error: "کد تأیید منقضی شده یا درخواستی ثبت نشده است." };
     }
@@ -211,9 +244,11 @@ export async function verifyOtp(
     await redis.del(`otp:${phone}`);
 
     // Find User
-    const user = await db.user.findUnique({
-      where: { phone, isActive: true },
-    });
+    const user = await withTimeout(
+      db.user.findUnique({
+        where: { phone, isActive: true },
+      })
+    );
 
     if (!user) {
       return { ok: false, error: "کاربر یافت نشد یا حساب غیرفعال است." };
@@ -221,12 +256,14 @@ export async function verifyOtp(
 
     // 5. Create Session in DB
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-    const session = await db.session.create({
-      data: {
-        userId: user.id,
-        expiresAt,
-      },
-    });
+    const session = await withTimeout(
+      db.session.create({
+        data: {
+          userId: user.id,
+          expiresAt,
+        },
+      })
+    );
 
     // 6. Sign JWT with jose
     const token = await new SignJWT({

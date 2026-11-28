@@ -19,10 +19,16 @@ function safeRevalidatePath(path: string) {
   }
 }
 
+const repIdSchema = z.string().min(1, "شناسه کارشناس نامعتبر است");
+
 export async function getRepDetailAction(repId: string) {
   await requireRole("ADMIN", "MANAGER");
+  const parsedId = repIdSchema.safeParse(repId);
+  if (!parsedId.success) {
+    return { ok: false, error: "شناسه کارشناس نامعتبر است" };
+  }
   try {
-    const detail = await getRepDetail(repId);
+    const detail = await getRepDetail(parsedId.data);
     if (!detail) return { ok: false, error: "کارشناس یافت نشد" };
     return { ok: true, data: detail };
   } catch (err) {

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { DealStage } from "@prisma/client";
+import { z } from "zod";
 import { db } from "../db";
 import { requireUser } from "../auth";
 import { recalculateAndSaveContactScore } from "../contacts";
@@ -333,12 +334,18 @@ export async function updateDealAction(rawInput: unknown) {
   }
 }
 
+const dealIdSchema = z.string().min(1, "شناسه معامله نامعتبر است");
+
 export async function deleteDealAction(dealId: string) {
   const currentUser = await requireUser();
+  const parsedId = dealIdSchema.safeParse(dealId);
+  if (!parsedId.success) {
+    return { ok: false, error: "شناسه معامله نامعتبر است" };
+  }
 
   try {
     const existing = await db.deal.findUnique({
-      where: { id: dealId },
+      where: { id: parsedId.data },
       select: { id: true, ownerId: true, contactId: true },
     });
 

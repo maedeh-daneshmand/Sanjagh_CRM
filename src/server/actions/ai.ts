@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { Channel, Prisma, SuggestionStatus, SuggestionType } from "@prisma/client";
+import { z } from "zod";
 import { db } from "../db";
 import { requireRole, requireUser } from "../auth";
 import { callAiJson, getAiModelName, isAiConfigured } from "../ai/client";
@@ -33,11 +34,25 @@ export async function getAiStatusAction() {
   };
 }
 
+const idSchema = z.string().min(1, "شناسه نامعتبر است");
+const analyzeNoteInputSchema = z.object({
+  contactId: z.string().min(1, "شناسه مخاطب نامعتبر است"),
+  text: z.string().trim().min(1, "متن یادداشت نمی‌تواند خالی باشد"),
+});
+const draftTemplateInputSchema = z.object({
+  channel: z.nativeEnum(Channel),
+  topic: z.string().max(500),
+});
+
 export async function summarizeContactAction(contactId: string) {
   const currentUser = await requireUser();
+  const parsedId = idSchema.safeParse(contactId);
+  if (!parsedId.success) {
+    return { ok: false, error: "شناسه مخاطب نامعتبر است" };
+  }
 
   const contact = await db.contact.findUnique({
-    where: { id: contactId },
+    where: { id: parsedId.data },
     select: {
       id: true,
       fullName: true,
@@ -125,13 +140,14 @@ export async function summarizeContactAction(contactId: string) {
 
 export async function analyzeNoteAction(contactId: string, text: string) {
   const currentUser = await requireUser();
-  const cleanText = text.trim();
-  if (!cleanText) {
-    return { ok: false, error: "متن یادداشت نمی‌تواند خالی باشد" };
+  const parsed = analyzeNoteInputSchema.safeParse({ contactId, text });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.errors[0]?.message || "ورودی نامعتبر است" };
   }
+  const cleanText = parsed.data.text;
 
   const contact = await db.contact.findUnique({
-    where: { id: contactId },
+    where: { id: parsed.data.contactId },
     select: {
       id: true,
       fullName: true,
@@ -244,9 +260,13 @@ export async function analyzeNoteAction(contactId: string, text: string) {
 
 export async function approveSuggestionAction(suggestionId: string) {
   const currentUser = await requireUser();
+  const parsedId = idSchema.safeParse(suggestionId);
+  if (!parsedId.success) {
+    return { ok: false, error: "شناسه پیشنهاد نامعتبر است" };
+  }
 
   const suggestion = await db.aiSuggestion.findUnique({
-    where: { id: suggestionId },
+    where: { id: parsedId.data },
     include: {
       contact: { select: { id: true, ownerId: true, isActive: true } },
     },
@@ -325,9 +345,13 @@ export async function approveSuggestionAction(suggestionId: string) {
 
 export async function rejectSuggestionAction(suggestionId: string) {
   const currentUser = await requireUser();
+  const parsedId = idSchema.safeParse(suggestionId);
+  if (!parsedId.success) {
+    return { ok: false, error: "شناسه پیشنهاد نامعتبر است" };
+  }
 
   const suggestion = await db.aiSuggestion.findUnique({
-    where: { id: suggestionId },
+    where: { id: parsedId.data },
     include: {
       contact: { select: { id: true, ownerId: true } },
     },
@@ -423,11 +447,15 @@ export async function draftTemplateWithAiAction(params: {
   topic: string;
 }) {
   await requireRole("ADMIN", "MANAGER");
+  const parsed = draftTemplateInputSchema.safeParse(params);
+  if (!parsed.success) {
+    return { ok: false, error: "پارامترهای تولید قالب نامعتبر است" };
+  }
 
   const aiResult = await callAiJson({
     systemPrompt:
       "شما نویسنده قالب پیام تبلیغاتی و پیگیری فروش فارسی در CRM سنجاق هستید. در متن از متغیر {{fullName}} برای نام مخاطب استفاده کنید. خروجی فقط JSON با کلیدهای subject (برای ایمیل) و body باشد.",
-    userPrompt: `کانال: ${params.channel}\nموضوع یا هدف پیام: ${params.topic || "پیگیری و ارائه پیشنهاد ویژه"}`,
+    userPrompt: `کانال: ${parsed.data.channel}\nموضوع یا هدف پیام: ${parsed.data.topic || "پیگیری و ارائه پیشنهاد ویژه"}`,
     schema: aiDraftMessageResponseSchema,
   });
 

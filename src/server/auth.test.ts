@@ -46,6 +46,7 @@ vi.mock("./queue/queues", () => ({
 describe("Auth Core & Security Rules", () => {
   beforeEach(async () => {
     await redis.flushall();
+    await redis.set("worker:heartbeat", "1", "EX", 30);
     cookieStore.clear();
     vi.clearAllMocks();
   });
@@ -209,6 +210,56 @@ describe("Auth Core & Security Rules", () => {
       // Checking SALES role should pass
       const verifiedUser = await requireRole("SALES");
       expect(verifiedUser.id).toBe(mockSalesUser.id);
+    });
+  });
+
+  describe("OTP Delivery Honesty & Redis/DB Resilience", () => {
+    it("returns error when no worker heartbeat is active and DEMO_MODE is off", async () => {
+      const prevDemo = process.env.DEMO_MODE;
+      process.env.DEMO_MODE = "false";
+      await redis.del("worker:heartbeat");
+
+      vi.mocked(db.user.findUnique).mockResolvedValue({
+        id: "user-1",
+        phone: "09121111111",
+        name: "تست",
+        role: "ADMIN",
+        isActive: true,
+        email: null,
+        avatarUrl: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as unknown as User);
+
+      const res = await requestOtp("09121111111");
+      process.env.DEMO_MODE = prevDemo;
+
+      expect(res.ok).toBe(false);
+      expect(res.error).toBe("سرویس ارسال پیامک فعال نیست");
+      expect(await redis.get("otp:09121111111")).toBeNull();
+    });
+
+    it("does not increment rate-limit counters when DB is down", async () => {
+      vi.mocked(db.user.findUnique).mockRejectedValueOnce(new Error("DB connection refused"));
+
+      const res = await requestOtp("09121111111", "1.2.3.4");
+      expect(res.ok).toBe(false);
+      expect(await redis.get("ratelimit:phone:09121111111")).toBeNull();
+      expect(await redis.get("ratelimit:ip:1.2.3.4")).toBeNull();
+    });
+
+    it("returns friendly error when Redis is down during requestOtp and verifyOtp", async () => {
+      const getSpy = vi.spyOn(redis, "get").mockRejectedValue(new Error("Redis connection closed"));
+
+      const reqRes = await requestOtp("09121111111", "1.2.3.4");
+      expect(reqRes.ok).toBe(false);
+      expect(reqRes.error).toBeTruthy();
+
+      const verRes = await verifyOtp("09121111111", "123456");
+      expect(verRes.ok).toBe(false);
+      expect(verRes.error).toBeTruthy();
+
+      getSpy.mockRestore();
     });
   });
 });

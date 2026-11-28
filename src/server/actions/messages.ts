@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { Channel, MessageStatus } from "@prisma/client";
+import { z } from "zod";
 import { db } from "../db";
 import { requireRole, requireUser } from "../auth";
 import { sendSingleMessageSchema } from "@/lib/schemas/campaigns";
@@ -101,11 +102,17 @@ export async function sendSingleMessageAction(rawInput: unknown) {
   }
 }
 
+const messageIdSchema = z.string().min(1, "شناسه پیام نامعتبر است");
+
 export async function retryFailedMessageAction(messageId: string) {
   await requireRole("ADMIN", "MANAGER");
+  const parsedId = messageIdSchema.safeParse(messageId);
+  if (!parsedId.success) {
+    return { ok: false, error: "شناسه پیام نامعتبر است" };
+  }
 
   try {
-    const msg = await db.message.findUnique({ where: { id: messageId } });
+    const msg = await db.message.findUnique({ where: { id: parsedId.data } });
     if (!msg) {
       return { ok: false, error: "پیام یافت نشد" };
     }

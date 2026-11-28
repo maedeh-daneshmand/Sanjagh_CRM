@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@prisma/client";
+import { z } from "zod";
 import { db } from "../db";
 import { requireRole } from "../auth";
 import { saveAutomationSchema } from "@/lib/schemas/automations";
@@ -15,16 +16,30 @@ function safeRevalidatePath(path: string) {
   }
 }
 
+const toggleAutomationSchema = z.object({
+  automationId: z.string().min(1, "شناسه اتوماسیون نامعتبر است"),
+  isActive: z.boolean(),
+});
+
+const testRunAutomationSchema = z.object({
+  automationId: z.string().min(1, "شناسه اتوماسیون نامعتبر است"),
+  contactId: z.string().min(1, "شناسه مخاطب نامعتبر است"),
+});
+
 export async function toggleAutomationActiveAction(
   automationId: string,
   isActive: boolean
 ) {
   await requireRole("ADMIN", "MANAGER");
+  const parsed = toggleAutomationSchema.safeParse({ automationId, isActive });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.errors[0]?.message || "ورودی نامعتبر است" };
+  }
 
   try {
     await db.automation.update({
-      where: { id: automationId },
-      data: { isActive },
+      where: { id: parsed.data.automationId },
+      data: { isActive: parsed.data.isActive },
     });
 
     safeRevalidatePath("/automations");
@@ -83,9 +98,13 @@ export async function testRunAutomationAction(
   contactId: string
 ) {
   await requireRole("ADMIN", "MANAGER");
+  const parsed = testRunAutomationSchema.safeParse({ automationId, contactId });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.errors[0]?.message || "ورودی نامعتبر است" };
+  }
 
   try {
-    const logs = await dryRunAutomation(automationId, contactId);
+    const logs = await dryRunAutomation(parsed.data.automationId, parsed.data.contactId);
     return { ok: true, data: logs };
   } catch (err) {
     console.error("[testRunAutomationAction error]", err);

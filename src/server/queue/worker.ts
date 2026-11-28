@@ -1,8 +1,12 @@
 import { Worker, Job } from "bullmq";
 import { CampaignStatus, Channel, ContactKind, LeadStatus, MessageStatus, Prisma, Source } from "@prisma/client";
 import { db } from "../db";
+import { redis } from "../redis";
 import { sendMessage } from "../messaging";
 import { getBullConnection } from "./connection";
+
+export const WORKER_HEARTBEAT_KEY = "worker:heartbeat";
+export const WORKER_HEARTBEAT_TTL_SECONDS = 30;
 import {
   AutomationStepJobData,
   CampaignDispatchJobData,
@@ -229,15 +233,36 @@ const globalForWorker = globalThis as unknown as {
   messagesWorker?: Worker;
   automationsWorker?: Worker;
   workersStarted?: boolean;
+  heartbeatTimer?: ReturnType<typeof setInterval>;
 };
 
 export function isWorkerRunning(): boolean {
   return Boolean(globalForWorker.workersStarted && globalForWorker.messagesWorker);
 }
 
+export async function hasActiveWorker(): Promise<boolean> {
+  if (isWorkerRunning()) return true;
+  try {
+    const val = await redis.get(WORKER_HEARTBEAT_KEY);
+    return Boolean(val);
+  } catch {
+    return false;
+  }
+}
+
 export function startWorkers(): void {
   if (globalForWorker.workersStarted) return;
   globalForWorker.workersStarted = true;
+
+  const refreshHeartbeat = () => {
+    redis.set(WORKER_HEARTBEAT_KEY, "1", "EX", WORKER_HEARTBEAT_TTL_SECONDS).catch(() => {});
+  };
+  refreshHeartbeat();
+  const heartbeatTimer = setInterval(refreshHeartbeat, 15_000);
+  if (typeof heartbeatTimer.unref === "function") {
+    heartbeatTimer.unref();
+  }
+  globalForWorker.heartbeatTimer = heartbeatTimer;
 
   const messagesWorker = new Worker(
     "messages",
@@ -282,7 +307,12 @@ export function startWorkers(): void {
   globalForWorker.automationsWorker = automationsWorker;
 
   const shutdown = async () => {
+    if (globalForWorker.heartbeatTimer) {
+      clearInterval(globalForWorker.heartbeatTimer);
+      globalForWorker.heartbeatTimer = undefined;
+    }
     try {
+      await redis.del(WORKER_HEARTBEAT_KEY).catch(() => {});
       await Promise.all([messagesWorker.close(), automationsWorker.close()]);
     } catch {
       // Ignore shutdown error

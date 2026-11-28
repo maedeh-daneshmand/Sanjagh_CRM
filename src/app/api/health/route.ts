@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/server/db";
 import { redis } from "@/server/redis";
-import { isWorkerRunning } from "@/server/queue/worker";
+import { hasActiveWorker } from "@/server/queue/worker";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +23,7 @@ export async function GET() {
     redisOk = false;
   }
 
-  const workerOk = isWorkerRunning();
+  const workerOk = redisOk ? await hasActiveWorker() : false;
   const ok = dbOk && redisOk;
 
   return NextResponse.json(
