@@ -9,6 +9,7 @@ export function getBullConnection(): ConnectionOptions {
       port: Number(parsed.port) || 6379,
       password: parsed.password || undefined,
       username: parsed.username || undefined,
+      tls: parsed.protocol === "rediss:" ? {} : undefined,
       maxRetriesPerRequest: null,
     };
   } catch {
